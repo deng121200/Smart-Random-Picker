@@ -149,21 +149,21 @@ class RandomPickerApp:
             except:
                 pass
 
-    pwd = simpledialog.askstring("管理员验证", "请输入密码:", show='*', parent=self.root)
-
+    def open_secret_menu(self, event):
+        pwd = simpledialog.askstring("系统配置", "请输入管理员密码:", show='*')
         if pwd == "114514":
             self.show_editor()
         elif pwd is not None:
             messagebox.showerror("错误", "密码不正确，访问被拒绝！")
 
-            def show_editor(self):
-        # 【修改重点】：把 self.window 改回 self.root
+        def show_editor(self):
+        # 1. 统一名字，解决报错 (必须用 self.root)
         editor = tk.Toplevel(self.root) 
         editor.title("高级配置 (机密)")
         editor.geometry("300x400")
         editor.eval(f'tk::PlaceWindow {editor} center')
 
-        # 同样这里也要改回 self.root
+        # 2. 强行锁定焦点，解决 Win7 无法输入问题
         editor.transient(self.root) 
         editor.grab_set()             
 
@@ -173,36 +173,17 @@ class RandomPickerApp:
         text_area.pack(expand=True, fill='both', padx=10, pady=5)
         text_area.insert('1.0', '\n'.join(self.skip_names))
         
+        # 3. 自动定位光标，让你直接能打字
         text_area.focus_set()
 
-
-        tk.Label(editor, text="请输入要暗中跳过的人名\n(每行一个)：").pack(pady=10)
-        
-        # 创建文本框
-        text_area = tk.Text(editor, font=("Microsoft YaHei", 12))
-        text_area.pack(expand=True, fill='both', padx=10, pady=5)
-        text_area.insert('1.0', '\n'.join(self.skip_names))
-        
-        # 【修复 3】：光标自动闪烁，让你一打开就能打字
-        text_area.focus_set()
-
-        # 这里下面应该还有你原本的“保存”按钮代码，请记得接在后面
-
-        tk.Label(editor, text="请输入要暗中跳过的人名\n(每行一个)：").pack(pady=10)
-        text_area = tk.Text(editor, font=("Microsoft YaHei", 12))
-        text_area.pack(expand=True, fill='both', padx=10, pady=5)
-        text_area.insert('1.0', '\n'.join(self.skip_names))
-
-        def save_secret():
-            new_data = text_area.get('1.0', 'end').strip()
-            self.skip_names = [n.strip() for n in new_data.split('\n') if n.strip()]
-            encoded = base64.b64encode(new_data.encode('utf-8')).decode('utf-8')
-            with open("sys_cache.dat", "w", encoding="utf-8") as f:
-                f.write(encoded)
-            messagebox.showinfo("成功", "数据已加密保存！")
+        # 下面是你原本的保存按钮代码（请确保对齐）
+        def save_and_close():
+            self.skip_names = [n.strip() for n in text_area.get('1.0', 'end').split('\n') if n.strip()]
             editor.destroy()
+            messagebox.showinfo("成功", "名单已更新！")
 
-        tk.Button(editor, text="加密并保存", bg="#f0ad4e", fg="white", font=("Microsoft YaHei", 12), command=save_secret).pack(pady=10)
+        tk.Button(editor, text="保存并退出", command=save_and_close).pack(pady=10)
+
 
     def play_sound(self, file, loop=0):
         if self.audio_enabled and os.path.exists(file):
