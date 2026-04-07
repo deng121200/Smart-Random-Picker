@@ -156,11 +156,28 @@ class RandomPickerApp:
         elif pwd is not None:
             messagebox.showerror("错误", "密码不正确，访问被拒绝！")
 
-    def show_editor(self):
-        editor = tk.Toplevel(self.root)
+        def show_editor(self):
+        # 【修复 1】：把 self.root 改成 self.window，解决报错
+        editor = tk.Toplevel(self.window) 
         editor.title("高级配置 (机密)")
         editor.geometry("300x400")
         editor.eval(f'tk::PlaceWindow {editor} center')
+
+        # 【修复 2】：锁定焦点！这是解决 Win7 无法输入的“神药”
+        editor.transient(self.window) # 让它始终浮在主程序上面
+        editor.grab_set()             # 强制抓取键盘，不输入完不准点别处
+
+        tk.Label(editor, text="请输入要暗中跳过的人名\n(每行一个)：").pack(pady=10)
+        
+        # 创建文本框
+        text_area = tk.Text(editor, font=("Microsoft YaHei", 12))
+        text_area.pack(expand=True, fill='both', padx=10, pady=5)
+        text_area.insert('1.0', '\n'.join(self.skip_names))
+        
+        # 【修复 3】：光标自动闪烁，让你一打开就能打字
+        text_area.focus_set()
+
+        # 这里下面应该还有你原本的“保存”按钮代码，请记得接在后面
 
         tk.Label(editor, text="请输入要暗中跳过的人名\n(每行一个)：").pack(pady=10)
         text_area = tk.Text(editor, font=("Microsoft YaHei", 12))
