@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import simpledialog, messagebox
 import random
 import os
+import sys
 import time
 import pygame
 import threading
@@ -10,9 +11,23 @@ import ctypes
 import urllib.request
 
 # ==========================================
+# 【核心修复 1】绝对路径定位 GPS
+# 彻底解决“经常找不到 名单.txt”的问题
+# ==========================================
+def get_base_path():
+    if getattr(sys, 'frozen', False):
+        # 如果是打包好的 exe 程序，定位到 exe 所在的真实目录
+        return os.path.dirname(sys.executable)
+    else:
+        # 如果是直接运行的 .py 脚本，定位到脚本所在真实目录
+        return os.path.dirname(os.path.abspath(__file__))
+
+BASE_DIR = get_base_path()
+
+# ==========================================
 # 注入底层身份 ID，确保任务栏图标正常
 # ==========================================
-my_app_id = 'yuyuchi.smartpicker.main.2.2' 
+my_app_id = 'yuyuchi.smartpicker.main.2.3' 
 try:
     ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(my_app_id)
 except Exception:
@@ -22,8 +37,8 @@ class RandomPickerApp:
     def __init__(self, root):
         self.root = root
         
-        # 定义当前版本号为 2.2 (纯净版)
-        self.current_version = "2.2"
+        # 【检查点】如果运行后右下角不是 2.3，说明你打开错文件了！
+        self.current_version = "2.3"
         self.root.title(f"SmartPicker v{self.current_version} (在线更新版)")
         
         width, height = 800, 600
@@ -49,12 +64,13 @@ class RandomPickerApp:
         self.names = []
         self.skip_names = []
         self.is_rolling = False
-        self.rolling_sounds = [f for f in os.listdir('.') if f.startswith('rolling') and f.endswith('.mp3')]
+        
+        # 音频文件也使用绝对路径定位，防止由于路径漂移导致没声音
+        self.rolling_sounds = [os.path.join(BASE_DIR, f) for f in os.listdir(BASE_DIR) if f.startswith('rolling') and f.endswith('.mp3')]
 
         # --- UI 布局 ---
         self.title_label = tk.Label(root, text="课堂随机点名", font=("Microsoft YaHei", 28, "bold"), bg="#f0f4f8", fg="#333")
         self.title_label.pack(pady=20)
-        # 依然保留双击标题触发暗箱操作的设定
         self.title_label.bind("<Double-Button-1>", self.open_secret_menu) 
 
         self.name_display = tk.Label(root, text="准备就绪", font=("Microsoft YaHei", 55, "bold"), 
@@ -109,25 +125,26 @@ class RandomPickerApp:
             pass
 
     def load_data(self):
-        # 1. 读取所有人名单
+        # 【核心修复 2】联合使用绝对路径与 utf-8-sig
+        mingdan_path = os.path.join(BASE_DIR, "名单.txt")
         try:
-            with open("名单.txt", "r", encoding="utf-8") as f:
+            with open(mingdan_path, "r", encoding="utf-8-sig") as f:
                 self.names = [line.strip() for line in f if line.strip()]
             if not self.names:
                 self.name_display.config(text="名单为空")
         except FileNotFoundError:
             self.name_display.config(text="未找到名单.txt", fg="red")
 
-        # 2. 读取黑名单（如果文件不存在则忽略）
+        heimingdan_path = os.path.join(BASE_DIR, "黑名单.txt")
         self.skip_names = []
         try:
-            with open("黑名单.txt", "r", encoding="utf-8") as f:
+            with open(heimingdan_path, "r", encoding="utf-8-sig") as f:
                 self.skip_names = [line.strip() for line in f if line.strip()]
         except FileNotFoundError:
             pass
 
     def open_secret_menu(self, event):
-        # 抛弃弹窗，直接用密码验证后重新读取文件
+        # 弹窗已被彻底删除！现在直接验证密码后从本地加载 黑名单.txt
         pwd = simpledialog.askstring("管理员验证", "请输入密码:", show='*', parent=self.root)
         if pwd == "114514":
             self.load_data()
@@ -160,7 +177,6 @@ class RandomPickerApp:
     def update_rolling(self):
         if self.is_rolling:
             count = self.draw_count_slider.get()
-            # 【核心幻觉逻辑】：滚动动画时，不剔除任何人，包括黑名单的人也放进去闪，假装绝对公平
             pool = self.names
             if pool:
                 fake_winners = random.sample(pool, min(count, len(pool)))
@@ -169,10 +185,9 @@ class RandomPickerApp:
 
     def finish_roll(self):
         count = self.draw_count_slider.get()
-        # 【核心暗箱逻辑】：最终停下时，悄悄把黑名单的人剔除掉，绝不会抽到他们
         pool = [n for n in self.names if n not in self.skip_names]
         if not pool:
-            pool = self.names # 如果所有人都被拉黑了，为了防止崩溃，恢复全员名单
+            pool = self.names
             
         winners = random.sample(pool, min(count, len(pool)))
         self.name_display.config(text="、".join(winners))
