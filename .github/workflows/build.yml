@@ -3,7 +3,14 @@ name: 自动打包点名器
 on:
   push:
     tags:
-      - 'v*' # 当你发布以 v 开头的标签（如 v1.5）时触发
+      - 'v*' # 当你发布以 v 开头的标签（如 v2.6）时触发
+
+# ==========================================
+# 【核心漏洞修复】：显式声明写入权限
+# 彻底杜绝 403 Forbidden 报错，确保机器人能成功上传 EXE 文件
+# ==========================================
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -22,9 +29,9 @@ jobs:
           python-version: '3.10'
 
       - name: 安装依赖
-        # 这里只安装打包必须的两个库，因为代码里使用了 urllib，所以不需要安装 requests
+        # V2.6 核心修改：新增了 pillow 库，用于支持自定义图片背景
         run: |
-          pip install pygame pyinstaller
+          pip install pygame pyinstaller pillow
 
       - name: 执行打包脚本
         run: |
