@@ -10,16 +10,20 @@ import webbrowser
 import ctypes
 import urllib.request
 
+# 尝试导入图像处理库 Pillow (用于支持自定义背景图)
+try:
+    from PIL import Image, ImageTk
+    HAS_PIL = True
+except ImportError:
+    HAS_PIL = False
+
 # ==========================================
 # 【核心修复 1】绝对路径定位 GPS
-# 彻底解决“经常找不到 名单.txt”的问题
 # ==========================================
 def get_base_path():
     if getattr(sys, 'frozen', False):
-        # 如果是打包好的 exe 程序，定位到 exe 所在的真实目录
         return os.path.dirname(sys.executable)
     else:
-        # 如果是直接运行的 .py 脚本，定位到脚本所在真实目录
         return os.path.dirname(os.path.abspath(__file__))
 
 BASE_DIR = get_base_path()
@@ -27,7 +31,7 @@ BASE_DIR = get_base_path()
 # ==========================================
 # 注入底层身份 ID，确保任务栏图标正常
 # ==========================================
-my_app_id = 'yuyuchi.smartpicker.main.2.3' 
+my_app_id = 'yuyuchi.smartpicker.main.2.6' 
 try:
     ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(my_app_id)
 except Exception:
@@ -37,16 +41,48 @@ class RandomPickerApp:
     def __init__(self, root):
         self.root = root
         
-        # 【检查点】如果运行后右下角不是 2.3，说明你打开错文件了！
-        self.current_version = "2.3"
-        self.root.title(f"SmartPicker v{self.current_version} (在线更新版)")
+        self.current_version = "2.6"
+        self.root.title(f"SmartPicker v{self.current_version} (视觉自适应版)")
         
         width, height = 800, 600
         self.root.update_idletasks()
         x = (self.root.winfo_screenwidth() // 2) - (width // 2)
         y = (self.root.winfo_screenheight() // 2) - (height // 2)
         self.root.geometry(f'{width}x{height}+{x}+{y}')
+        
+        # 默认背景色
         self.root.configure(bg="#f0f4f8")
+
+        # ==========================================
+        # 【新增功能】：加载自定义背景图片
+        # ==========================================
+        bg_path = None
+        # 自动寻找同目录下的 bg.png, bg.jpg, bg.jpeg
+        for ext in ['png', 'jpg', 'jpeg', 'PNG', 'JPG']:
+            p = os.path.join(BASE_DIR, f"bg.{ext}")
+            if os.path.exists(p):
+                bg_path = p
+                break
+                
+        if bg_path:
+            if HAS_PIL:
+                try:
+                    # 使用 LANCZOS 算法高质量缩放图片以适应窗口
+                    bg_image = Image.open(bg_path)
+                    bg_image = bg_image.resize((width, height), Image.Resampling.LANCZOS)
+                    self.bg_photo = ImageTk.PhotoImage(bg_image)
+                    self.bg_label = tk.Label(root, image=self.bg_photo)
+                    # 将图片标签铺满整个窗口并置于底层
+                    self.bg_label.place(x=0, y=0, relwidth=1, relheight=1)
+                    self.bg_label.lower()
+                except Exception as e:
+                    print(f"背景图片加载失败: {e}")
+            else:
+                # 如果用户没安装 pillow 库，弹出友好的提示
+                self.root.after(500, lambda: messagebox.showwarning(
+                    "缺少图像处理组件", 
+                    "检测到您放置了背景图片 (bg)！\n\n为了显示它，请在命令提示符中运行：\npip install pillow\n\n(打包后的EXE无需此操作)", 
+                    parent=self.root))
 
         # 在线更新配置
         self.github_user = "deng121200" 
@@ -65,7 +101,6 @@ class RandomPickerApp:
         self.skip_names = []
         self.is_rolling = False
         
-        # 音频文件也使用绝对路径定位，防止由于路径漂移导致没声音
         self.rolling_sounds = [os.path.join(BASE_DIR, f) for f in os.listdir(BASE_DIR) if f.startswith('rolling') and f.endswith('.mp3')]
 
         # --- UI 布局 ---
@@ -125,7 +160,6 @@ class RandomPickerApp:
             pass
 
     def load_data(self):
-        # 【核心修复 2】联合使用绝对路径与 utf-8-sig
         mingdan_path = os.path.join(BASE_DIR, "名单.txt")
         try:
             with open(mingdan_path, "r", encoding="utf-8-sig") as f:
@@ -144,13 +178,33 @@ class RandomPickerApp:
             pass
 
     def open_secret_menu(self, event):
-        # 弹窗已被彻底删除！现在直接验证密码后从本地加载 黑名单.txt
         pwd = simpledialog.askstring("管理员验证", "请输入密码:", show='*', parent=self.root)
         if pwd == "114514":
             self.load_data()
             messagebox.showinfo("成功", f"暗箱操作已就绪！\n已从本地读取 {len(self.skip_names)} 名跳过人员。", parent=self.root)
         elif pwd is not None:
             messagebox.showerror("错误", "密码错误！", parent=self.root)
+
+    # ==========================================
+    # 【新增功能】：字体大小动态自适应引擎
+    # ==========================================
+    def update_names_display(self, names_list):
+        text = "、".join(names_list)
+        count = len(names_list)
+        
+        # 根据人数动态计算字号，保证不卡顿、不越界
+        if count <= 2:
+            font_size = 55
+        elif count <= 5:
+            font_size = 45
+        elif count <= 10:
+            font_size = 35
+        elif count <= 15:
+            font_size = 28
+        else:
+            font_size = 22 # 20人同屏时缩小字号
+            
+        self.name_display.config(text=text, font=("Microsoft YaHei", font_size, "bold"))
 
     def toggle_roll(self):
         if not self.names:
@@ -180,7 +234,7 @@ class RandomPickerApp:
             pool = self.names
             if pool:
                 fake_winners = random.sample(pool, min(count, len(pool)))
-                self.name_display.config(text="、".join(fake_winners))
+                self.update_names_display(fake_winners)
             self.root.after(50, self.update_rolling)
 
     def finish_roll(self):
@@ -190,7 +244,7 @@ class RandomPickerApp:
             pool = self.names
             
         winners = random.sample(pool, min(count, len(pool)))
-        self.name_display.config(text="、".join(winners))
+        self.update_names_display(winners)
         self.add_to_history(winners)
 
     def add_to_history(self, winners):
