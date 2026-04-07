@@ -14,7 +14,7 @@ import ctypes  # 【新增】：导入系统底层接口模块
 # 【新增】：注入底层身份 ID
 # 这行代码能确保 Windows 任务栏正确显示你的程序独立图标和名字，而不是显示默认的 Python 图标
 # ==========================================
-my_app_id = 'yuyuchi.smartpicker.main.1.3' 
+my_app_id = 'yuyuchi.smartpicker.main.1.4' 
 try:
     ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(my_app_id)
 except Exception:
@@ -25,7 +25,7 @@ class RandomPickerApp:
         self.root = root
         
         # 定义当前版本号
-        self.current_version = "1.3"
+        self.current_version = "1.4"
         
         # 【修改】：把窗口标题改成了你的专属名字
         self.root.title(f"遇屿迟点名器 v{self.current_version} (在线更新版)")
