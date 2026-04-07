@@ -3,12 +3,12 @@ name: 自动打包点名器
 on:
   push:
     tags:
-      - 'v*'
+      - 'v*' # 当你发布以 v 开头的标签（如 v1.5）时触发
 
 jobs:
   build:
     runs-on: windows-latest
-    # 【优化项 1】强制开启 Node.js 24 模式，彻底消除版本弃用警告
+    # 强制开启 Node.js 24 模式，彻底消除版本弃用警告
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
@@ -22,9 +22,9 @@ jobs:
           python-version: '3.10'
 
       - name: 安装依赖
-        # 【优化项 2】增加了 requests，防止 PyInstaller 打包时报错罢工
+        # 这里只安装打包必须的两个库，因为代码里使用了 urllib，所以不需要安装 requests
         run: |
-          pip install pygame pyinstaller requests
+          pip install pygame pyinstaller
 
       - name: 执行打包脚本
         run: |
