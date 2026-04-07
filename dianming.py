@@ -10,9 +10,9 @@ import ctypes
 import urllib.request
 
 # ==========================================
-# 【新增】：注入底层身份 ID，确保任务栏图标正常
+# 注入底层身份 ID，确保任务栏图标正常
 # ==========================================
-my_app_id = 'yuyuchi.smartpicker.main.2.0' 
+my_app_id = 'yuyuchi.smartpicker.main.2.2' 
 try:
     ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(my_app_id)
 except Exception:
@@ -22,8 +22,8 @@ class RandomPickerApp:
     def __init__(self, root):
         self.root = root
         
-        # 定义当前版本号
-        self.current_version = "2.0"
+        # 定义当前版本号为 2.2 (纯净版)
+        self.current_version = "2.2"
         self.root.title(f"SmartPicker v{self.current_version} (在线更新版)")
         
         width, height = 800, 600
@@ -54,6 +54,7 @@ class RandomPickerApp:
         # --- UI 布局 ---
         self.title_label = tk.Label(root, text="课堂随机点名", font=("Microsoft YaHei", 28, "bold"), bg="#f0f4f8", fg="#333")
         self.title_label.pack(pady=20)
+        # 依然保留双击标题触发暗箱操作的设定
         self.title_label.bind("<Double-Button-1>", self.open_secret_menu) 
 
         self.name_display = tk.Label(root, text="准备就绪", font=("Microsoft YaHei", 55, "bold"), 
@@ -108,6 +109,7 @@ class RandomPickerApp:
             pass
 
     def load_data(self):
+        # 1. 读取所有人名单
         try:
             with open("名单.txt", "r", encoding="utf-8") as f:
                 self.names = [line.strip() for line in f if line.strip()]
@@ -116,48 +118,22 @@ class RandomPickerApp:
         except FileNotFoundError:
             self.name_display.config(text="未找到名单.txt", fg="red")
 
+        # 2. 读取黑名单（如果文件不存在则忽略）
+        self.skip_names = []
+        try:
+            with open("黑名单.txt", "r", encoding="utf-8") as f:
+                self.skip_names = [line.strip() for line in f if line.strip()]
+        except FileNotFoundError:
+            pass
+
     def open_secret_menu(self, event):
+        # 抛弃弹窗，直接用密码验证后重新读取文件
         pwd = simpledialog.askstring("管理员验证", "请输入密码:", show='*', parent=self.root)
         if pwd == "114514":
-            self.show_editor()
+            self.load_data()
+            messagebox.showinfo("成功", f"暗箱操作已就绪！\n已从本地读取 {len(self.skip_names)} 名跳过人员。", parent=self.root)
         elif pwd is not None:
             messagebox.showerror("错误", "密码错误！", parent=self.root)
-
-        def show_editor(self):
-        editor = tk.Toplevel(self.root)
-        editor.title("高级配置 (机密)")
-        editor.geometry("300x450")
-        editor.eval(f'tk::PlaceWindow {editor} center')
-        
-        # 强制锁定焦点
-        editor.transient(self.root)
-        editor.grab_set()
-
-        # 提示文字
-        tk.Label(editor, text="请输入要暗中跳过的人名\n(每行一个)：", font=("Microsoft YaHei", 10)).pack(pady=10)
-        
-        # ========================================================
-        # 【重点修复】：增加 bg="white" (白底), bd=2 (加粗边框), relief="sunken" (凹陷效果)
-        # 这样它在任何系统下都会呈现出一个非常明显的输入框！
-        # ========================================================
-        text_area = tk.Text(editor, font=("Microsoft YaHei", 12), bg="white", bd=2, relief="sunken")
-        text_area.pack(expand=True, fill='both', padx=20, pady=5)
-        
-        # 插入已有的跳过名单
-        text_area.insert('1.0', '\n'.join(self.skip_names))
-        
-        # 光标自动闪烁
-        text_area.focus_set()
-
-        def save_and_close():
-            # 获取文本框里的所有人名并保存
-            self.skip_names = [n.strip() for n in text_area.get('1.0', 'end').split('\n') if n.strip()]
-            editor.destroy()
-            messagebox.showinfo("成功", "跳过名单已更新！", parent=self.root)
-
-        # 保存按钮
-        tk.Button(editor, text="保存并退出", font=("Microsoft YaHei", 10, "bold"), bg="#2196f3", fg="white", 
-                  command=save_and_close, pady=5).pack(pady=15)
 
     def toggle_roll(self):
         if not self.names:
@@ -183,16 +159,21 @@ class RandomPickerApp:
 
     def update_rolling(self):
         if self.is_rolling:
-            self.name_display.config(text=random.choice(self.names))
+            count = self.draw_count_slider.get()
+            # 【核心幻觉逻辑】：滚动动画时，不剔除任何人，包括黑名单的人也放进去闪，假装绝对公平
+            pool = self.names
+            if pool:
+                fake_winners = random.sample(pool, min(count, len(pool)))
+                self.name_display.config(text="、".join(fake_winners))
             self.root.after(50, self.update_rolling)
 
     def finish_roll(self):
         count = self.draw_count_slider.get()
-        # 过滤掉需要跳过的人
+        # 【核心暗箱逻辑】：最终停下时，悄悄把黑名单的人剔除掉，绝不会抽到他们
         pool = [n for n in self.names if n not in self.skip_names]
         if not pool:
-            pool = self.names # 如果全都被跳过了，就回退到全员名单
-        
+            pool = self.names # 如果所有人都被拉黑了，为了防止崩溃，恢复全员名单
+            
         winners = random.sample(pool, min(count, len(pool)))
         self.name_display.config(text="、".join(winners))
         self.add_to_history(winners)
