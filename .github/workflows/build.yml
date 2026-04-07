@@ -8,12 +8,18 @@ on:
 jobs:
   build:
     runs-on: windows-latest
-    steps:
-      - name: 检出代码
-        uses: actions/checkout@v4
+    # 【新增】强制开启 Node.js 24 模式，解决报错中的预警
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
+    steps:
+      # 【升级】从 v4 升级到 v5 (支持更高版本的 Node.js)
+      - name: 检出代码
+        uses: actions/checkout@v5
+
+      # 【升级】从 v5 升级到 v6
       - name: 设置 Python 环境
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.10'
 
