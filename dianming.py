@@ -123,32 +123,41 @@ class RandomPickerApp:
         elif pwd is not None:
             messagebox.showerror("错误", "密码错误！", parent=self.root)
 
-    def show_editor(self):
-        # 统一使用 self.root，彻底解决 AttributeError 报错
+        def show_editor(self):
         editor = tk.Toplevel(self.root)
         editor.title("高级配置 (机密)")
         editor.geometry("300x450")
         editor.eval(f'tk::PlaceWindow {editor} center')
         
-        # Win7 焦点锁定修复
+        # 强制锁定焦点
         editor.transient(self.root)
         editor.grab_set()
 
+        # 提示文字
         tk.Label(editor, text="请输入要暗中跳过的人名\n(每行一个)：", font=("Microsoft YaHei", 10)).pack(pady=10)
-        text_area = tk.Text(editor, font=("Microsoft YaHei", 12))
-        text_area.pack(expand=True, fill='both', padx=10, pady=5)
+        
+        # ========================================================
+        # 【重点修复】：增加 bg="white" (白底), bd=2 (加粗边框), relief="sunken" (凹陷效果)
+        # 这样它在任何系统下都会呈现出一个非常明显的输入框！
+        # ========================================================
+        text_area = tk.Text(editor, font=("Microsoft YaHei", 12), bg="white", bd=2, relief="sunken")
+        text_area.pack(expand=True, fill='both', padx=20, pady=5)
+        
+        # 插入已有的跳过名单
         text_area.insert('1.0', '\n'.join(self.skip_names))
         
-        # 自动获取光标焦点，直接打字
+        # 光标自动闪烁
         text_area.focus_set()
 
         def save_and_close():
+            # 获取文本框里的所有人名并保存
             self.skip_names = [n.strip() for n in text_area.get('1.0', 'end').split('\n') if n.strip()]
             editor.destroy()
             messagebox.showinfo("成功", "跳过名单已更新！", parent=self.root)
 
+        # 保存按钮
         tk.Button(editor, text="保存并退出", font=("Microsoft YaHei", 10, "bold"), bg="#2196f3", fg="white", 
-                  command=save_and_close, pady=5).pack(pady=10)
+                  command=save_and_close, pady=5).pack(pady=15)
 
     def toggle_roll(self):
         if not self.names:
