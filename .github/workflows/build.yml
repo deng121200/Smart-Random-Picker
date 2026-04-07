@@ -25,7 +25,7 @@ jobs:
 
       - name: 安装依赖
         run: |
-          pip install pygame pyinstaller
+          pip install pygame pyinstaller requests
 
       - name: 执行打包脚本
         run: |
