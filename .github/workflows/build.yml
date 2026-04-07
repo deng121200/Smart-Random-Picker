@@ -8,22 +8,21 @@ on:
 jobs:
   build:
     runs-on: windows-latest
-    # 【新增】强制开启 Node.js 24 模式，解决报错中的预警
+    # 【优化项 1】强制开启 Node.js 24 模式，彻底消除版本弃用警告
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
-      # 【升级】从 v4 升级到 v5 (支持更高版本的 Node.js)
       - name: 检出代码
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
-      # 【升级】从 v5 升级到 v6
       - name: 设置 Python 环境
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
       - name: 安装依赖
+        # 【优化项 2】增加了 requests，防止 PyInstaller 打包时报错罢工
         run: |
           pip install pygame pyinstaller requests
 
