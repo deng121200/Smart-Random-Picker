@@ -149,8 +149,8 @@ class RandomPickerApp:
             except:
                 pass
 
-    def open_secret_menu(self, event):
-        pwd = simpledialog.askstring("系统配置", "请输入管理员密码:", show='*')
+    pwd = simpledialog.askstring("管理员验证", "请输入密码:", show='*', parent=self.root)
+
         if pwd == "114514":
             self.show_editor()
         elif pwd is not None:
