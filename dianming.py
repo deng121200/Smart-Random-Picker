@@ -31,7 +31,7 @@ BASE_DIR = get_base_path()
 # ==========================================
 # 注入底层身份 ID，确保任务栏图标正常
 # ==========================================
-my_app_id = 'yuyuchi.smartpicker.main.2.6' 
+my_app_id = 'yuyuchi.smartpicker.main.2.7' 
 try:
     ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(my_app_id)
 except Exception:
@@ -41,7 +41,8 @@ class RandomPickerApp:
     def __init__(self, root):
         self.root = root
         
-        self.current_version = "2.6"
+        # 版本号正式升级为 2.7
+        self.current_version = "2.7"
         self.root.title(f"SmartPicker v{self.current_version} (视觉自适应版)")
         
         width, height = 800, 600
@@ -54,10 +55,9 @@ class RandomPickerApp:
         self.root.configure(bg="#f0f4f8")
 
         # ==========================================
-        # 【新增功能】：加载自定义背景图片
+        # 【功能】：加载自定义背景图片
         # ==========================================
         bg_path = None
-        # 自动寻找同目录下的 bg.png, bg.jpg, bg.jpeg
         for ext in ['png', 'jpg', 'jpeg', 'PNG', 'JPG']:
             p = os.path.join(BASE_DIR, f"bg.{ext}")
             if os.path.exists(p):
@@ -67,24 +67,21 @@ class RandomPickerApp:
         if bg_path:
             if HAS_PIL:
                 try:
-                    # 使用 LANCZOS 算法高质量缩放图片以适应窗口
                     bg_image = Image.open(bg_path)
                     bg_image = bg_image.resize((width, height), Image.Resampling.LANCZOS)
                     self.bg_photo = ImageTk.PhotoImage(bg_image)
                     self.bg_label = tk.Label(root, image=self.bg_photo)
-                    # 将图片标签铺满整个窗口并置于底层
                     self.bg_label.place(x=0, y=0, relwidth=1, relheight=1)
                     self.bg_label.lower()
                 except Exception as e:
                     print(f"背景图片加载失败: {e}")
             else:
-                # 如果用户没安装 pillow 库，弹出友好的提示
                 self.root.after(500, lambda: messagebox.showwarning(
                     "缺少图像处理组件", 
                     "检测到您放置了背景图片 (bg)！\n\n为了显示它，请在命令提示符中运行：\npip install pillow\n\n(打包后的EXE无需此操作)", 
                     parent=self.root))
 
-        # 在线更新配置
+        # 在线更新与反馈配置
         self.github_user = "deng121200" 
         self.github_repo = "Smart-Random-Picker"
         self.update_url = f"https://raw.githubusercontent.com/{self.github_user}/{self.github_repo}/main/version.txt"
@@ -120,11 +117,19 @@ class RandomPickerApp:
         self.btn.grid(row=0, column=0, padx=20)
 
         self.slider_frame = tk.Frame(self.control_frame, bg="#f0f4f8")
-        self.slider_frame.grid(row=0, column=1, padx=20)
+        self.slider_frame.grid(row=0, column=1, padx=10)
         tk.Label(self.slider_frame, text="抽取人数:", font=("Microsoft YaHei", 12), bg="#f0f4f8").pack(side=tk.LEFT)
         self.draw_count_slider = tk.Scale(self.slider_frame, from_=1, to=20, orient=tk.HORIZONTAL, 
-                                          bg="#f0f4f8", length=150, font=("Microsoft YaHei", 10))
+                                          bg="#f0f4f8", length=120, font=("Microsoft YaHei", 10))
         self.draw_count_slider.pack(side=tk.LEFT)
+
+        # ==========================================
+        # 【新增功能】：V2.7 专属反馈按钮 (方案 B)
+        # ==========================================
+        self.feedback_btn = tk.Button(self.control_frame, text="🐛 反馈建议", font=("Microsoft YaHei", 12, "bold"), 
+                                      bg="#ff9800", fg="white", command=self.open_feedback_page, 
+                                      width=10, relief="flat", cursor="hand2")
+        self.feedback_btn.grid(row=0, column=2, padx=10)
 
         self.bottom_frame = tk.Frame(root, bg="#f0f4f8")
         self.bottom_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=20, pady=20)
@@ -146,6 +151,18 @@ class RandomPickerApp:
 
         self.load_data()
         threading.Thread(target=self.check_for_updates, daemon=True).start()
+
+    # ==========================================
+    # 【新增逻辑】：触发浏览器打开 GitHub Issues
+    # ==========================================
+    def open_feedback_page(self):
+        feedback_url = f"https://github.com/{self.github_user}/{self.github_repo}/issues"
+        try:
+            # 尝试调用系统默认浏览器打开网页
+            webbrowser.open(feedback_url)
+        except Exception as e:
+            # 如果极端情况下（比如多媒体电脑没装任何浏览器），弹出手动复制提示
+            messagebox.showerror("连接失败", f"无法自动打开浏览器，请手动复制网址访问：\n\n{feedback_url}", parent=self.root)
 
     def check_for_updates(self):
         try:
@@ -185,14 +202,10 @@ class RandomPickerApp:
         elif pwd is not None:
             messagebox.showerror("错误", "密码错误！", parent=self.root)
 
-    # ==========================================
-    # 【新增功能】：字体大小动态自适应引擎
-    # ==========================================
     def update_names_display(self, names_list):
         text = "、".join(names_list)
         count = len(names_list)
         
-        # 根据人数动态计算字号，保证不卡顿、不越界
         if count <= 2:
             font_size = 55
         elif count <= 5:
@@ -202,7 +215,7 @@ class RandomPickerApp:
         elif count <= 15:
             font_size = 28
         else:
-            font_size = 22 # 20人同屏时缩小字号
+            font_size = 22
             
         self.name_display.config(text=text, font=("Microsoft YaHei", font_size, "bold"))
 
