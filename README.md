@@ -56,12 +56,23 @@ Smart-Random-Picker 是一款专为教育教学环境设计的轻量级随机点
 建议使用 **Python 3.8.10** 以确保编译产物向下兼容 Windows 7。
 ```bash
 pip install pygame pyinstaller
-极速编译命令
-​使用 PyInstaller 进行单文件打包，并注入所有隐藏依赖组件：
+```
+
+### 极速编译命令
+使用 PyInstaller 进行单文件打包，并注入所有隐藏依赖组件：
+```bash
 pyinstaller --noconsole --onefile --clean --name="SmartPicker_V2.8.1_Real" --hidden-import=pygame dianming.py
-📝 问题反馈与贡献
-​如果您在使用过程中遇到任何 Bug 或有新的功能建议，请通过界面的“反馈建议”按钮，或直接访问本仓库的 Issues 页面 提交工单。
-​📄 版权与致谢
-​Inspiration：设计灵感来源于 @遇屿迟 (yuyuchi)。
-​License：遵循 MIT 开源协议。允许自由使用、修改及分发。
-​<!-- end list -->
+```
+
+---
+
+## 📝 问题反馈与贡献
+
+如果您在使用过程中遇到任何 Bug 或有新的功能建议，请通过界面的“反馈建议”按钮，或直接访问本仓库的 [Issues 页面](../../issues) 提交工单。
+
+---
+
+## 📄 版权与致谢
+
+* **Inspiration**：设计灵感来源于 @遇屿迟 (yuyuchi)。
+* **License**：遵循 MIT 开源协议。允许自由使用、修改及分发。
