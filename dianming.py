@@ -10,15 +10,8 @@ import webbrowser
 import ctypes
 import urllib.request
 
-# 尝试导入图像处理库 Pillow (用于支持自定义背景图)
-try:
-    from PIL import Image, ImageTk
-    HAS_PIL = True
-except ImportError:
-    HAS_PIL = False
-
 # ==========================================
-# 【核心修复 1】绝对路径定位 GPS
+# 【核心定位】绝对路径 GPS
 # ==========================================
 def get_base_path():
     if getattr(sys, 'frozen', False):
@@ -31,7 +24,7 @@ BASE_DIR = get_base_path()
 # ==========================================
 # 注入底层身份 ID，确保任务栏图标正常
 # ==========================================
-my_app_id = 'yuyuchi.smartpicker.main.2.7' 
+my_app_id = 'yuyuchi.smartpicker.main.2.8.1' 
 try:
     ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(my_app_id)
 except Exception:
@@ -41,9 +34,9 @@ class RandomPickerApp:
     def __init__(self, root):
         self.root = root
         
-        # 版本号正式升级为 2.7
-        self.current_version = "2.7"
-        self.root.title(f"SmartPicker v{self.current_version} (视觉自适应版)")
+        # 版本号升级为 2.8.1 (修复 Win7 编码崩溃Bug)
+        self.current_version = "2.8.1"
+        self.root.title(f"SmartPicker v{self.current_version} (Win7 纯净极速版)")
         
         width, height = 800, 600
         self.root.update_idletasks()
@@ -51,35 +44,8 @@ class RandomPickerApp:
         y = (self.root.winfo_screenheight() // 2) - (height // 2)
         self.root.geometry(f'{width}x{height}+{x}+{y}')
         
-        # 默认背景色
+        # 默认背景色 (清爽蓝灰)
         self.root.configure(bg="#f0f4f8")
-
-        # ==========================================
-        # 【功能】：加载自定义背景图片
-        # ==========================================
-        bg_path = None
-        for ext in ['png', 'jpg', 'jpeg', 'PNG', 'JPG']:
-            p = os.path.join(BASE_DIR, f"bg.{ext}")
-            if os.path.exists(p):
-                bg_path = p
-                break
-                
-        if bg_path:
-            if HAS_PIL:
-                try:
-                    bg_image = Image.open(bg_path)
-                    bg_image = bg_image.resize((width, height), Image.Resampling.LANCZOS)
-                    self.bg_photo = ImageTk.PhotoImage(bg_image)
-                    self.bg_label = tk.Label(root, image=self.bg_photo)
-                    self.bg_label.place(x=0, y=0, relwidth=1, relheight=1)
-                    self.bg_label.lower()
-                except Exception as e:
-                    print(f"背景图片加载失败: {e}")
-            else:
-                self.root.after(500, lambda: messagebox.showwarning(
-                    "缺少图像处理组件", 
-                    "检测到您放置了背景图片 (bg)！\n\n为了显示它，请在命令提示符中运行：\npip install pillow\n\n(打包后的EXE无需此操作)", 
-                    parent=self.root))
 
         # 在线更新与反馈配置
         self.github_user = "deng121200" 
@@ -123,13 +89,17 @@ class RandomPickerApp:
                                           bg="#f0f4f8", length=120, font=("Microsoft YaHei", 10))
         self.draw_count_slider.pack(side=tk.LEFT)
 
-        # ==========================================
-        # 【新增功能】：V2.7 专属反馈按钮 (方案 B)
-        # ==========================================
+        # 手动刷新名单按钮
+        self.refresh_btn = tk.Button(self.control_frame, text="🔄 刷新", font=("Microsoft YaHei", 12, "bold"), 
+                                     bg="#00bcd4", fg="white", command=self.manual_refresh, 
+                                     width=8, relief="flat", cursor="hand2")
+        self.refresh_btn.grid(row=0, column=2, padx=10)
+
+        # 反馈按钮
         self.feedback_btn = tk.Button(self.control_frame, text="🐛 反馈建议", font=("Microsoft YaHei", 12, "bold"), 
                                       bg="#ff9800", fg="white", command=self.open_feedback_page, 
                                       width=10, relief="flat", cursor="hand2")
-        self.feedback_btn.grid(row=0, column=2, padx=10)
+        self.feedback_btn.grid(row=0, column=3, padx=10)
 
         self.bottom_frame = tk.Frame(root, bg="#f0f4f8")
         self.bottom_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=20, pady=20)
@@ -153,15 +123,58 @@ class RandomPickerApp:
         threading.Thread(target=self.check_for_updates, daemon=True).start()
 
     # ==========================================
-    # 【新增逻辑】：触发浏览器打开 GitHub Issues
+    # 【新增引擎】：智能双模文本解码器
     # ==========================================
+    def safe_read_file(self, file_path):
+        """尝试以现代和复古两种编码格式安全读取名单文件"""
+        if not os.path.exists(file_path):
+            return None
+            
+        try:
+            # 策略A：尝试按现代 UTF-8 格式读取
+            with open(file_path, "r", encoding="utf-8-sig") as f:
+                return [line.strip() for line in f if line.strip()]
+        except UnicodeDecodeError:
+            try:
+                # 策略B：如果报错，立刻无缝切换到 Win7 老旧的 GBK 编码读取
+                with open(file_path, "r", encoding="gbk") as f:
+                    return [line.strip() for line in f if line.strip()]
+            except Exception as e:
+                print(f"读取文件发生未知错误: {e}")
+                return []
+
+    def load_data(self):
+        # 使用智能解码器读取主名单
+        mingdan_path = os.path.join(BASE_DIR, "名单.txt")
+        names_data = self.safe_read_file(mingdan_path)
+        
+        if names_data is None:
+            self.name_display.config(text="未找到名单.txt", fg="red")
+            self.names = []
+        else:
+            self.names = names_data
+            if not self.names:
+                self.name_display.config(text="名单为空")
+            else:
+                # 恢复默认字体颜色（防止之前显示红色的报错字样残留）
+                self.name_display.config(fg="#0056b3")
+
+        # 使用智能解码器读取黑名单
+        heimingdan_path = os.path.join(BASE_DIR, "黑名单.txt")
+        skip_data = self.safe_read_file(heimingdan_path)
+        self.skip_names = skip_data if skip_data is not None else []
+
+    def manual_refresh(self):
+        self.load_data()
+        count = len(self.names)
+        skip_count = len(self.skip_names)
+        messagebox.showinfo("刷新成功", f"名单已更新！\n当前读取到 {count} 名学生。\n已拦截 {skip_count} 名跳过人员。", parent=self.root)
+
     def open_feedback_page(self):
         feedback_url = f"https://github.com/{self.github_user}/{self.github_repo}/issues"
         try:
-            # 尝试调用系统默认浏览器打开网页
             webbrowser.open(feedback_url)
         except Exception as e:
-            # 如果极端情况下（比如多媒体电脑没装任何浏览器），弹出手动复制提示
             messagebox.showerror("连接失败", f"无法自动打开浏览器，请手动复制网址访问：\n\n{feedback_url}", parent=self.root)
 
     def check_for_updates(self):
@@ -174,24 +187,6 @@ class RandomPickerApp:
                     if messagebox.askyesno("更新提示", f"发现新版本 v{remote_version}！\n是否前往下载？", parent=self.root):
                         webbrowser.open(self.release_url)
         except:
-            pass
-
-    def load_data(self):
-        mingdan_path = os.path.join(BASE_DIR, "名单.txt")
-        try:
-            with open(mingdan_path, "r", encoding="utf-8-sig") as f:
-                self.names = [line.strip() for line in f if line.strip()]
-            if not self.names:
-                self.name_display.config(text="名单为空")
-        except FileNotFoundError:
-            self.name_display.config(text="未找到名单.txt", fg="red")
-
-        heimingdan_path = os.path.join(BASE_DIR, "黑名单.txt")
-        self.skip_names = []
-        try:
-            with open(heimingdan_path, "r", encoding="utf-8-sig") as f:
-                self.skip_names = [line.strip() for line in f if line.strip()]
-        except FileNotFoundError:
             pass
 
     def open_secret_menu(self, event):
@@ -220,6 +215,9 @@ class RandomPickerApp:
         self.name_display.config(text=text, font=("Microsoft YaHei", font_size, "bold"))
 
     def toggle_roll(self):
+        if not self.is_rolling:
+            self.load_data()
+            
         if not self.names:
             messagebox.showwarning("警告", "请确保程序同目录下有 名单.txt 文件")
             return
@@ -259,12 +257,6 @@ class RandomPickerApp:
         winners = random.sample(pool, min(count, len(pool)))
         self.update_names_display(winners)
         self.add_to_history(winners)
-
-    def add_to_history(self, winners):
-        self.history_text.config(state=tk.NORMAL)
-        self.history_text.insert(tk.END, f"[{time.strftime('%H:%M:%S')}] {'、'.join(winners)}\n")
-        self.history_text.see(tk.END)
-        self.history_text.config(state=tk.DISABLED)
 
 if __name__ == "__main__":
     root = tk.Tk()
