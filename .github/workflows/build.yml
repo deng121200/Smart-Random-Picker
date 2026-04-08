@@ -3,7 +3,7 @@ name: 自动打包点名器
 on:
   push:
     tags:
-      - 'v*' # 当你发布以 v 开头的标签（如 v2.7）时触发
+      - 'v*' # 当你发布以 v 开头的标签（如 v2.8.1）时触发
 
 # ==========================================
 # 【核心漏洞修复】：显式声明写入权限
@@ -29,13 +29,14 @@ jobs:
           python-version: '3.8'
 
       - name: 安装依赖
-        # 锁定 Pillow 9.5.0，确保 Win7 图像引擎不崩溃
+        # 【V2.8.1 同步】：已彻底移除 Pillow 依赖，实现纯净极速构建
         run: |
-          pip install pygame pyinstaller pillow==9.5.0
+          pip install pygame pyinstaller
 
       - name: 执行打包脚本
+        # 【V2.8.1 同步】：增加 --clean 清除缓存，并强制注入 pygame 确保多媒体稳定
         run: |
-          python -m PyInstaller --noconsole --onefile --name "SmartPicker" dianming.py
+          python -m PyInstaller --noconsole --onefile --clean --name "SmartPicker" --hidden-import=pygame dianming.py
 
       - name: 上传成品
         uses: softprops/action-gh-release@v2
