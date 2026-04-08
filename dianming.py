@@ -24,7 +24,7 @@ BASE_DIR = get_base_path()
 # ==========================================
 # 注入底层身份 ID，确保任务栏图标正常
 # ==========================================
-my_app_id = 'yuyuchi.smartpicker.main.2.8.1' 
+my_app_id = 'yuyuchi.smartpicker.main.2.8.2' 
 try:
     ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(my_app_id)
 except Exception:
@@ -34,9 +34,9 @@ class RandomPickerApp:
     def __init__(self, root):
         self.root = root
         
-        # 版本号升级为 2.8.1 (修复 Win7 编码崩溃Bug)
-        self.current_version = "2.8.1"
-        self.root.title(f"SmartPicker v{self.current_version} (Win7 纯净极速版)")
+        # 版本号升级为 2.8.2 (修复黑名单暴露Bug，提升隐蔽性)
+        self.current_version = "2.8.2"
+        self.root.title(f"SmartPicker v{self.current_version} (Win7 纯净防漏版)")
         
         width, height = 800, 600
         self.root.update_idletasks()
@@ -123,20 +123,17 @@ class RandomPickerApp:
         threading.Thread(target=self.check_for_updates, daemon=True).start()
 
     # ==========================================
-    # 【新增引擎】：智能双模文本解码器
+    # 【引擎】：智能双模文本解码器
     # ==========================================
     def safe_read_file(self, file_path):
-        """尝试以现代和复古两种编码格式安全读取名单文件"""
         if not os.path.exists(file_path):
             return None
             
         try:
-            # 策略A：尝试按现代 UTF-8 格式读取
             with open(file_path, "r", encoding="utf-8-sig") as f:
                 return [line.strip() for line in f if line.strip()]
         except UnicodeDecodeError:
             try:
-                # 策略B：如果报错，立刻无缝切换到 Win7 老旧的 GBK 编码读取
                 with open(file_path, "r", encoding="gbk") as f:
                     return [line.strip() for line in f if line.strip()]
             except Exception as e:
@@ -144,7 +141,6 @@ class RandomPickerApp:
                 return []
 
     def load_data(self):
-        # 使用智能解码器读取主名单
         mingdan_path = os.path.join(BASE_DIR, "名单.txt")
         names_data = self.safe_read_file(mingdan_path)
         
@@ -156,19 +152,20 @@ class RandomPickerApp:
             if not self.names:
                 self.name_display.config(text="名单为空")
             else:
-                # 恢复默认字体颜色（防止之前显示红色的报错字样残留）
                 self.name_display.config(fg="#0056b3")
 
-        # 使用智能解码器读取黑名单
         heimingdan_path = os.path.join(BASE_DIR, "黑名单.txt")
         skip_data = self.safe_read_file(heimingdan_path)
         self.skip_names = skip_data if skip_data is not None else []
 
+    # ==========================================
+    # 【漏洞修复】：移除刷新按钮的防漏信息
+    # ==========================================
     def manual_refresh(self):
         self.load_data()
         count = len(self.names)
-        skip_count = len(self.skip_names)
-        messagebox.showinfo("刷新成功", f"名单已更新！\n当前读取到 {count} 名学生。\n已拦截 {skip_count} 名跳过人员。", parent=self.root)
+        # 只显示总名单人数，绝口不提跳过人员，确保暗箱完全隐蔽
+        messagebox.showinfo("刷新成功", f"名单已更新！\n当前读取到 {count} 名学生。", parent=self.root)
 
     def open_feedback_page(self):
         feedback_url = f"https://github.com/{self.github_user}/{self.github_repo}/issues"
@@ -193,6 +190,7 @@ class RandomPickerApp:
         pwd = simpledialog.askstring("管理员验证", "请输入密码:", show='*', parent=self.root)
         if pwd == "114514":
             self.load_data()
+            # 只有这里才会显示拦截数量，尽在管理员掌握
             messagebox.showinfo("成功", f"暗箱操作已就绪！\n已从本地读取 {len(self.skip_names)} 名跳过人员。", parent=self.root)
         elif pwd is not None:
             messagebox.showerror("错误", "密码错误！", parent=self.root)
