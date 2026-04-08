@@ -3,11 +3,10 @@ name: 自动打包点名器
 on:
   push:
     tags:
-      - 'v*' # 当你发布以 v 开头的标签（如 v2.6）时触发
+      - 'v*' # 当你发布以 v 开头的标签（如 v2.7）时触发
 
 # ==========================================
 # 【核心漏洞修复】：显式声明写入权限
-# 彻底杜绝 403 Forbidden 报错，确保机器人能成功上传 EXE 文件
 # ==========================================
 permissions:
   contents: write
@@ -26,12 +25,13 @@ jobs:
       - name: 设置 Python 环境
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          # 【终极降配核心】：强制使用 Python 3.8，完美兼容老旧 Win7 希沃白板！
+          python-version: '3.8'
 
       - name: 安装依赖
-        # V2.6 核心修改：新增了 pillow 库，用于支持自定义图片背景
+        # 锁定 Pillow 9.5.0，确保 Win7 图像引擎不崩溃
         run: |
-          pip install pygame pyinstaller pillow
+          pip install pygame pyinstaller pillow==9.5.0
 
       - name: 执行打包脚本
         run: |
