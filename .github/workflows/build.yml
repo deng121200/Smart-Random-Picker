@@ -1,46 +1,142 @@
-name: 自动打包点名器
+name: SmartPicker V3.0 自动打包
 
 on:
   push:
     tags:
-      - 'v*' # 当你发布以 v 开头的标签（如 v2.8.1）时触发
+      - 'v*' # 当你发布以 v 开头的标签（如 v3.0.0）时触发
 
 # ==========================================
-# 【核心漏洞修复】：显式声明写入权限
+# 【V3.0增强】显式声明所有必要权限
 # ==========================================
 permissions:
   contents: write
+  packages: write
+  issues: write
 
 jobs:
   build:
     runs-on: windows-latest
-    # 强制开启 Node.js 24 模式，彻底消除版本弃用警告
+    # 【V3.0优化】强制使用Node.js 20，确保长期兼容
     env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE20: true
 
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
 
-      - name: 设置 Python 环境
+      - name: 设置 Python 3.8 环境
         uses: actions/setup-python@v5
         with:
-          # 【终极降配核心】：强制使用 Python 3.8，完美兼容老旧 Win7 希沃白板！
+          # 【核心兼容】强制使用 Python 3.8.10 对应版本
           python-version: '3.8'
+          architecture: 'x64'  # 确保64位构建
 
-      - name: 安装依赖
-        # 【V2.8.1 同步】：已彻底移除 Pillow 依赖，实现纯净极速构建
+      - name: 安装 V3.0 所有依赖
+        # 【V3.0新增】包含语音播报所需依赖
         run: |
-          pip install pygame pyinstaller
+          pip install pygame==2.5.2
+          pip install pywin32==306
+          pip install pyinstaller==5.13.2
+          echo "✅ 所有依赖安装完成"
 
-      - name: 执行打包脚本
-        # 【V2.8.1 同步】：增加 --clean 清除缓存，并强制注入 pygame 确保多媒体稳定
+      - name: 执行 V3.0 智能打包
+        # 【V3.0增强】添加图标、版本信息、UPX压缩
         run: |
-          python -m PyInstaller --noconsole --onefile --clean --name "SmartPicker" --hidden-import=pygame dianming.py
+          # 检查主程序文件
+          if not exist "smartpicker_v3.py" (
+            echo "❌ 错误: 未找到 smartpicker_v3.py"
+            exit 1
+          )
+          
+          # 创建版本文件
+          echo "3.0.0" > version.txt
+          
+          # 执行 PyInstaller 打包
+          python -m PyInstaller ^
+            --noconsole ^
+            --onefile ^
+            --clean ^
+            --name "SmartPicker_V3" ^
+            --icon=icon.ico ^
+            --version-file=version.txt ^
+            --add-data="version.txt;." ^
+            --hidden-import=pygame ^
+            --hidden-import=win32com ^
+            --hidden-import=win32com.client ^
+            --upx-dir="C:\upx" ^
+            smartpicker_v3.py
+          
+          echo "✅ 打包完成"
 
-      - name: 上传成品
+      - name: 验证打包结果
+        run: |
+          echo "📦 打包文件信息:"
+          dir "dist\SmartPicker_V3.exe"
+          echo "📏 文件大小:"
+          (Get-Item "dist\SmartPicker_V3.exe").Length | ForEach-Object { "$([math]::Round($_/1MB, 2)) MB" }
+
+      - name: 上传到 GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/SmartPicker.exe
+          files: |
+            dist/SmartPicker_V3.exe
+            smartpicker_v3.py
+            名单.txt
+            黑名单.txt
+            config.ini
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 创建便携版 ZIP
+        # 【V3.0新增】创建包含所有文件的便携版
+        run: |
+          $version = "3.0.0"
+          $zipName = "SmartPicker_V${version}_Portable.zip"
+          
+          # 创建便携版目录
+          New-Item -ItemType Directory -Force -Path "portable"
+          Copy-Item "dist\SmartPicker_V3.exe" -Destination "portable\SmartPicker.exe"
+          Copy-Item "名单.txt" -Destination "portable\" -ErrorAction SilentlyContinue
+          Copy-Item "黑名单.txt" -Destination "portable\" -ErrorAction SilentlyContinue
+          Copy-Item "config.ini" -Destination "portable\" -ErrorAction SilentlyContinue
+          
+          # 创建说明文件
+          @"
+          ====================================
+          SmartPicker V3.0 便携版
+          ====================================
+          版本: $version
+          系统要求: Windows 7 SP1 (64位)
+          
+          包含文件:
+          1. SmartPicker.exe     - 主程序
+          2. 名单.txt            - 学生名单
+          3. 黑名单.txt          - 跳过名单（可选）
+          4. config.ini          - 配置文件
+          
+          使用说明:
+          1. 解压到任意文件夹
+          2. 编辑 名单.txt 添加学生姓名
+          3. 双击 SmartPicker.exe 运行
+          
+          注意事项:
+          - 无需安装 Python
+          - 首次运行会自动生成配置文件
+          - 支持语音播报（需要系统TTS支持）
+          ====================================
+          "@ | Out-File -FilePath "portable\README.txt" -Encoding UTF8
+          
+          # 创建ZIP文件
+          Compress-Archive -Path "portable\*" -DestinationPath $zipName -Force
+          echo "✅ 便携版创建完成: $zipName"
+
+      - name: 上传便携版
+        uses: softprops/action-gh-release@v2
+        with:
+          files: SmartPicker_V3.0.0_Portable.zip
+          tag_name: ${{ github.ref_name }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
