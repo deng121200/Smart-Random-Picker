@@ -272,7 +272,9 @@ class DataManager:
                 invalid_names.append(name)
         
         if invalid_names:
-            self.logger.warning(f"黑名单中存在 {len(invalid_names)} 个不在主名单中的姓名: {invalid_names[:5]}")
+            if self.config.get_bool('GENERAL', 'enable_logging', False):
+                # 安全日志：不显示具体姓名
+                self.logger.warning(f"发现 {len(invalid_names)} 个无效的跳过名单条目")
         
         return names, valid_blacklist
     
@@ -799,19 +801,48 @@ class SmartPickerApp:
             self.audio_enabled = False
     
     def load_data(self):
-        """加载名单数据"""
-        self.names, self.blacklist = self.data_manager.load_all_data()
-        
-        if not self.names:
-            self.name_display.config(text="未找到名单.txt", fg="red")
-        elif len(self.names) == 0:
-            self.name_display.config(text="名单为空")
-        else:
+        """
+        加载名单数据
+        【V3.1安全强化】完全隐藏黑名单信息，保持暗箱机制绝对隐秘
+        """
+        try:
+            # 加载数据
+            self.names, self.blacklist = self.data_manager.load_all_data()
+            
+            # 计算总人数（不区分是否在黑名单）
+            total_count = len(self.names)
+            
+            # 【核心安全策略】根据不同情况显示中性信息
+            if not self.names or total_count == 0:
+                # 情况1：没有名单文件或名单为空
+                self.name_display.config(
+                    text="请确保名单.txt文件存在且不为空",
+                    fg="#ff9800",  # 橙色警告
+                    font=("Microsoft YaHei", 20, "bold")
+                )
+            else:
+                # 情况2：正常情况，只显示总人数
+                if total_count == 1:
+                    display_text = "已加载 1 名学生"
+                else:
+                    display_text = f"已加载 {total_count} 名学生"
+                
+                self.name_display.config(
+                    text=display_text,
+                    fg="#0056b3",  # 蓝色正常
+                    font=("Microsoft YaHei", 24, "bold")
+                )
+                
+        except Exception as e:
+            # 异常情况也保持信息隐秘
             self.name_display.config(
-                text=f"已加载 {len(self.names)} 名学生\n{len(self.blacklist)} 人在黑名单",
-                fg="#0056b3",
-                font=("Microsoft YaHei", 24, "bold")
+                text="数据加载异常，请检查名单文件",
+                fg="#f44336",  # 红色错误
+                font=("Microsoft YaHei", 18, "bold")
             )
+            if self.config.get_bool('GENERAL', 'enable_logging', False):
+                print(f"[错误] 名单加载失败: {e}")
+
     
     def manual_refresh(self):
         """手动刷新名单"""
@@ -872,7 +903,7 @@ class SmartPickerApp:
             self.load_data()
             messagebox.showinfo(
                 "成功",
-                f"暗箱操作已就绪！\n已从本地读取 {len(self.blacklist)} 名跳过人员。",
+                f"已就绪！\n已读取 {len(self.blacklist)} 人。",
                 parent=self.root
             )
         elif pwd is not None:
