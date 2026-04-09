@@ -1,19 +1,50 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+"""
+SmartPicker V3.0 - 课堂智能随机点名系统
+【核心定位】Win7 多媒体白板专用纯净版
+【环境要求】Python 3.8.10 (64位) + Windows 7 SP1
+【作者】@遇屿迟
+【版本】3.0.0
+"""
+
 import tkinter as tk
-from tkinter import simpledialog, messagebox
+from tkinter import simpledialog, messagebox, font as tkfont
 import random
 import os
 import sys
 import time
-import pygame
 import threading
 import webbrowser
 import ctypes
 import urllib.request
+import json
+import configparser
+from datetime import datetime
+from typing import List, Optional, Tuple, Dict
+
+# ==========================================
+# 可选依赖导入（优雅降级设计）
+# ==========================================
+try:
+    import pygame
+    PYGAME_AVAILABLE = True
+except ImportError:
+    PYGAME_AVAILABLE = False
+    print("【提示】pygame 未安装，音频功能将禁用")
+
+try:
+    import win32com.client
+    WIN32COM_AVAILABLE = True
+except ImportError:
+    WIN32COM_AVAILABLE = False
+    print("【提示】pywin32 未安装，语音播报功能将禁用")
 
 # ==========================================
 # 【核心定位】绝对路径 GPS
 # ==========================================
-def get_base_path():
+def get_base_path() -> str:
+    """获取程序运行的基准目录（支持打包和源码运行）"""
     if getattr(sys, 'frozen', False):
         return os.path.dirname(sys.executable)
     else:
@@ -24,181 +55,862 @@ BASE_DIR = get_base_path()
 # ==========================================
 # 注入底层身份 ID，确保任务栏图标正常
 # ==========================================
-my_app_id = 'yuyuchi.smartpicker.main.2.8.2' 
+MY_APP_ID = 'yuyuchi.smartpicker.main.3.0.0'
 try:
-    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(my_app_id)
-except Exception:
-    pass
+    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(MY_APP_ID)
+except (AttributeError, OSError):
+    pass  # 非Windows环境或旧版Windows静默忽略
 
-class RandomPickerApp:
+# ==========================================
+# 配置管理器（单例模式）
+# ==========================================
+class ConfigManager:
+    """配置管理器，负责读取、写入和验证所有配置参数"""
+    
+    _instance = None
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance._initialized = False
+        return cls._instance
+    
+    def __init__(self):
+        if self._initialized:
+            return
+        
+        self.config_path = os.path.join(BASE_DIR, "config.ini")
+        self.default_config = {
+            'GENERAL': {
+                'version': '3.0.0',
+                'language': 'zh_CN',
+                'auto_check_update': 'true',
+                'enable_logging': 'true',
+                'log_level': 'INFO'
+            },
+            'UI': {
+                'theme': 'light',
+                'animation_speed': 'medium',  # slow, medium, fast
+                'font_family': 'Microsoft YaHei',
+                'enable_animations': 'true'
+            },
+            'PICKER': {
+                'default_draw_count': '1',
+                'max_draw_count': '20',
+                'enable_blacklist': 'true',
+                'voice_enabled': 'true',
+                'voice_rate': '0',  # -10到10，0为默认
+                'voice_volume': '100'  # 0-100
+            },
+            'AUDIO': {
+                'enable_sound': 'true',
+                'rolling_sound_volume': '80',
+                'victory_sound_volume': '100'
+            }
+        }
+        
+        self.config = configparser.ConfigParser()
+        self._load_or_create_config()
+        self._initialized = True
+    
+    def _load_or_create_config(self):
+        """加载或创建配置文件"""
+        if not os.path.exists(self.config_path):
+            self._create_default_config()
+        else:
+            try:
+                self.config.read(self.config_path, encoding='utf-8')
+                # 验证必要配置项是否存在
+                self._validate_config()
+            except Exception as e:
+                print(f"【警告】配置文件读取失败，将使用默认配置: {e}")
+                self._create_default_config()
+    
+    def _create_default_config(self):
+        """创建默认配置文件"""
+        for section, options in self.default_config.items():
+            self.config[section] = options
+        
+        try:
+            with open(self.config_path, 'w', encoding='utf-8') as f:
+                self.config.write(f)
+            print(f"【提示】已创建默认配置文件: {self.config_path}")
+        except Exception as e:
+            print(f"【警告】无法创建配置文件: {e}")
+    
+    def _validate_config(self):
+        """验证配置文件完整性"""
+        for section, options in self.default_config.items():
+            if section not in self.config:
+                self.config[section] = {}
+            for key, default_value in options.items():
+                if key not in self.config[section]:
+                    self.config[section][key] = default_value
+    
+    def get(self, section: str, key: str, fallback=None):
+        """获取配置值"""
+        try:
+            return self.config.get(section, key, fallback=fallback)
+        except (configparser.NoSectionError, configparser.NoOptionError):
+            return fallback
+    
+    def set(self, section: str, key: str, value: str):
+        """设置配置值"""
+        if section not in self.config:
+            self.config[section] = {}
+        self.config[section][key] = str(value)
+        self._save_config()
+    
+    def _save_config(self):
+        """保存配置文件"""
+        try:
+            with open(self.config_path, 'w', encoding='utf-8') as f:
+                self.config.write(f)
+        except Exception as e:
+            print(f"【警告】无法保存配置文件: {e}")
+    
+    def get_bool(self, section: str, key: str, fallback=False) -> bool:
+        """获取布尔值配置"""
+        value = self.get(section, key, str(fallback))
+        return value.lower() in ('true', 'yes', '1', 'on')
+    
+    def get_int(self, section: str, key: str, fallback=0) -> int:
+        """获取整数值配置"""
+        try:
+            return int(self.get(section, key, str(fallback)))
+        except ValueError:
+            return fallback
+    
+    def get_float(self, section: str, key: str, fallback=0.0) -> float:
+        """获取浮点数值配置"""
+        try:
+            return float(self.get(section, key, str(fallback)))
+        except ValueError:
+            return fallback
+
+# ==========================================
+# 数据管理器
+# ==========================================
+class DataManager:
+    """数据管理器，负责名单文件的读写和编码处理"""
+    
+    def __init__(self):
+        self.config = ConfigManager()
+        self.logger = self._get_logger()
+    
+    def _get_logger(self):
+        """获取日志记录器（简化版）"""
+        class SimpleLogger:
+            def info(self, msg): print(f"[INFO] {msg}")
+            def warning(self, msg): print(f"[WARNING] {msg}")
+            def error(self, msg): print(f"[ERROR] {msg}")
+        return SimpleLogger()
+    
+    def safe_read_file(self, file_path: str) -> Optional[List[str]]:
+        """
+        安全读取文件，智能处理编码问题
+        【V3.0增强】支持 utf-8-sig、gbk、utf-16 等多种编码
+        """
+        if not os.path.exists(file_path):
+            self.logger.warning(f"文件不存在: {file_path}")
+            return None
+        
+        encodings = ['utf-8-sig', 'gbk', 'utf-16', 'utf-8', 'cp1252']
+        
+        for encoding in encodings:
+            try:
+                with open(file_path, 'r', encoding=encoding) as f:
+                    lines = [line.strip() for line in f if line.strip()]
+                    if lines:
+                        self.logger.info(f"成功读取文件 [{encoding}]: {file_path}, 共{len(lines)}行")
+                        
+                        # 自动去重并保持原始顺序
+                        seen = set()
+                        unique_lines = []
+                        for line in lines:
+                            if line not in seen:
+                                seen.add(line)
+                                unique_lines.append(line)
+                        
+                        if len(unique_lines) < len(lines):
+                            self.logger.warning(f"已移除 {len(lines) - len(unique_lines)} 个重复项")
+                        
+                        return unique_lines
+            except UnicodeDecodeError:
+                continue
+            except Exception as e:
+                self.logger.error(f"读取文件时发生错误 [{encoding}]: {file_path} - {e}")
+                if encoding == encodings[-1]:  # 最后一个编码也失败
+                    break
+        
+        self.logger.error(f"无法解码文件，尝试了所有编码: {file_path}")
+        return []
+    
+    def load_all_data(self) -> Tuple[List[str], List[str]]:
+        """加载所有名单数据"""
+        # 加载主名单
+        main_list_path = os.path.join(BASE_DIR, "名单.txt")
+        names = self.safe_read_file(main_list_path)
+        if names is None:
+            self.logger.error("未找到 名单.txt 文件")
+            names = []
+        
+        # 加载黑名单
+        blacklist_path = os.path.join(BASE_DIR, "黑名单.txt")
+        blacklist = self.safe_read_file(blacklist_path)
+        if blacklist is None:
+            blacklist = []  # 黑名单文件不存在视为空
+        
+        # 验证黑名单中的姓名是否存在于主名单
+        valid_blacklist = []
+        invalid_names = []
+        
+        for name in blacklist:
+            if name in names:
+                valid_blacklist.append(name)
+            else:
+                invalid_names.append(name)
+        
+        if invalid_names:
+            self.logger.warning(f"黑名单中存在 {len(invalid_names)} 个不在主名单中的姓名: {invalid_names[:5]}")
+        
+        return names, valid_blacklist
+    
+    def save_history(self, history_data: List[Dict]):
+        """保存抽取历史到文件"""
+        try:
+            history_path = os.path.join(BASE_DIR, "history.json")
+            with open(history_path, 'w', encoding='utf-8') as f:
+                json.dump(history_data, f, ensure_ascii=False, indent=2)
+            self.logger.info(f"历史记录已保存: {history_path}")
+        except Exception as e:
+            self.logger.error(f"保存历史记录失败: {e}")
+
+# ==========================================
+# 语音管理器
+# ==========================================
+class VoiceManager:
+    """语音管理器，负责文本到语音的转换"""
+    
+    def __init__(self):
+        self.config = ConfigManager()
+        self.enabled = self.config.get_bool('PICKER', 'voice_enabled', True) and WIN32COM_AVAILABLE
+        
+        if self.enabled:
+            try:
+                self.speaker = win32com.client.Dispatch("SAPI.SpVoice")
+                self._setup_voice()
+                self.log("语音引擎初始化成功")
+            except Exception as e:
+                self.enabled = False
+                self.log(f"语音引擎初始化失败: {e}", level="error")
+        else:
+            self.speaker = None
+            if not WIN32COM_AVAILABLE:
+                self.log("pywin32 未安装，语音功能禁用", level="warning")
+    
+    def log(self, message: str, level: str = "info"):
+        """日志记录"""
+        prefix = {
+            "info": "[VOICE-INFO]",
+            "warning": "[VOICE-WARN]",
+            "error": "[VOICE-ERROR]"
+        }.get(level, "[VOICE]")
+        print(f"{prefix} {message}")
+    
+    def _setup_voice(self):
+        """配置语音参数"""
+        if not self.enabled or not self.speaker:
+            return
+        
+        try:
+            # 设置语速 (-10到10，0为默认)
+            rate = self.config.get_int('PICKER', 'voice_rate', 0)
+            if -10 <= rate <= 10:
+                self.speaker.Rate = rate
+            
+            # 设置音量 (0-100)
+            volume = self.config.get_int('PICKER', 'voice_volume', 100)
+            if 0 <= volume <= 100:
+                self.speaker.Volume = volume
+            
+            # 尝试设置中文语音（如果可用）
+            voices = self.speaker.GetVoices()
+            chinese_voice_found = False
+            
+            for i in range(voices.Count):
+                voice = voices.Item(i)
+                voice_desc = voice.GetDescription()
+                # 检查是否为中文语音
+                if any(keyword in voice_desc for keyword in ["Chinese", "中文", "China", "Taiwan"]):
+                    self.speaker.Voice = voice
+                    chinese_voice_found = True
+                    self.log(f"使用中文语音: {voice_desc}")
+                    break
+            
+            if not chinese_voice_found and voices.Count > 0:
+                self.speaker.Voice = voices.Item(0)
+                self.log(f"使用默认语音: {self.speaker.Voice.GetDescription()}")
+                
+        except Exception as e:
+            self.log(f"语音配置失败: {e}", level="warning")
+    
+    def speak(self, text: str, async_mode: bool = True):
+        """
+        朗读文本
+        async_mode: 是否异步播放（不阻塞主线程）
+        """
+        if not self.enabled or not self.speaker or not text:
+            return
+        
+        def _speak_internal():
+            try:
+                self.speaker.Speak(text, 1)  # 1 = 异步模式
+            except Exception as e:
+                self.log(f"语音播放失败: {e}", level="error")
+        
+        if async_mode:
+            # 在新线程中播放语音
+            thread = threading.Thread(target=_speak_internal, daemon=True)
+            thread.start()
+        else:
+            _speak_internal()
+    
+    def speak_winners(self, winners: List[str]):
+        """播报抽取结果"""
+        if not winners:
+            return
+        
+        if len(winners) == 1:
+            text = f"抽取到：{winners[0]}"
+        else:
+            names_text = "、".join(winners)
+            text = f"共抽取 {len(winners)} 人，分别是：{names_text}"
+        
+        self.speak(text)
+    
+    def stop(self):
+        """停止当前语音播放"""
+        if self.enabled and self.speaker:
+            try:
+                self.speaker.Speak("", 3)  # 3 = 停止所有语音
+            except Exception:
+                pass
+
+# ==========================================
+# 动画引擎（纯Tkinter实现）
+# ==========================================
+class AnimationEngine:
+    """纯Tkinter动画引擎，无Pillow依赖"""
+    
     def __init__(self, root):
         self.root = root
+        self.config = ConfigManager()
+        self.animation_speed = self._get_speed_value()
         
-        # 版本号升级为 2.8.2 (修复黑名单暴露Bug，提升隐蔽性)
-        self.current_version = "2.8.2"
-        self.root.title(f"SmartPicker v{self.current_version} (Win7 纯净防漏版)")
+        # 预定义的动画效果
+        self.colors = {
+            'primary': '#0056b3',
+            'success': '#4caf50',
+            'warning': '#ff9800',
+            'danger': '#f44336',
+            'rolling_start': '#0056b3',
+            'rolling_end': '#2196f3',
+            'victory': '#4caf50'
+        }
+    
+    def _get_speed_value(self) -> int:
+        """根据配置获取动画速度值"""
+        speed_map = {
+            'slow': 30,
+            'medium': 16,
+            'fast': 8
+        }
+        speed_config = self.config.get('UI', 'animation_speed', 'medium')
+        return speed_map.get(speed_config.lower(), 16)
+    
+    def hex_to_rgb(self, hex_color: str) -> Tuple[int, int, int]:
+        """十六进制颜色转RGB元组"""
+        hex_color = hex_color.lstrip('#')
+        if len(hex_color) == 3:
+            hex_color = ''.join([c*2 for c in hex_color])
+        return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+    
+    def rgb_to_hex(self, rgb: Tuple[int, int, int]) -> str:
+        """RGB元组转十六进制颜色"""
+        return f'#{rgb[0]:02x}{rgb[1]:02x}{rgb[2]:02x}'
+    
+    def interpolate_color(self, start_color: str, end_color: str, ratio: float) -> str:
+        """颜色插值"""
+        start_rgb = self.hex_to_rgb(start_color)
+        end_rgb = self.hex_to_rgb(end_color)
         
+        result_rgb = (
+            int(start_rgb[0] + (end_rgb[0] - start_rgb[0]) * ratio),
+            int(start_rgb[1] + (end_rgb[1] - start_rgb[1]) * ratio),
+            int(start_rgb[2] + (end_rgb[2] - start_rgb[2]) * ratio)
+        )
+        
+        return self.rgb_to_hex(result_rgb)
+    
+    def color_transition(self, widget, start_color: str, end_color: str, 
+                        duration: int = 500, callback=None):
+        """
+        颜色渐变动画
+        duration: 动画时长(毫秒)
+        """
+        if not self.config.get_bool('UI', 'enable_animations', True):
+            widget.config(fg=end_color)
+            if callback:
+                callback()
+            return
+        
+        frames = max(1, int(duration / self.animation_speed))
+        current_frame = [0]  # 使用列表以便在闭包中修改
+        
+        def animate():
+            if current_frame[0] <= frames:
+                ratio = current_frame[0] / frames
+                current_color = self.interpolate_color(start_color, end_color, ratio)
+                widget.config(fg=current_color)
+                current_frame[0] += 1
+                self.root.after(self.animation_speed, animate)
+            else:
+                widget.config(fg=end_color)
+                if callback:
+                    callback()
+        
+        animate()
+    
+    def pulse_animation(self, widget, base_color: str, pulse_color: str, 
+                       cycles: int = 3, pulse_duration: int = 300):
+        """脉冲动画（呼吸效果）"""
+        if not self.config.get_bool('UI', 'enable_animations', True):
+            return
+        
+        def pulse(cycle: int):
+            if cycle < cycles * 2:  # 每个周期包含一次变亮和一次恢复
+                if cycle % 2 == 0:
+                    self.color_transition(widget, base_color, pulse_color, pulse_duration // 2,
+                                         lambda: pulse(cycle + 1))
+                else:
+                    self.color_transition(widget, pulse_color, base_color, pulse_duration // 2,
+                                         lambda: pulse(cycle + 1))
+        
+        pulse(0)
+    
+    def rolling_name_animation(self, name_label, names: List[str], 
+                              interval: int = 50, callback=None):
+        """
+        名字滚动动画（模拟轮盘效果）
+        interval: 每个名字显示的时间(毫秒)
+        """
+        if not names:
+            return
+        
+        current_index = [0]
+        total_names = len(names)
+        
+        def show_next_name():
+            if current_index[0] < total_names:
+                name_label.config(text=names[current_index[0]])
+                current_index[0] += 1
+                self.root.after(interval, show_next_name)
+            else:
+                if callback:
+                    callback()
+        
+        show_next_name()
+    
+    def victory_animation(self, widget, winners: List[str]):
+        """胜利动画（抽取结果展示）"""
+        if not winners or not self.config.get_bool('UI', 'enable_animations', True):
+            return
+        
+        # 第一步：颜色过渡到胜利色
+        self.color_transition(
+            widget, 
+            self.colors['rolling_start'], 
+            self.colors['victory'], 
+            300,
+            lambda: self._victory_step2(widget, winners)
+        )
+    
+    def _victory_step2(self, widget, winners: List[str]):
+        """胜利动画第二步：脉冲效果"""
+        self.pulse_animation(
+            widget,
+            self.colors['victory'],
+            '#ffffff',  # 白色脉冲
+            cycles=2,
+            pulse_duration=400
+        )
+
+# ==========================================
+# 主应用程序
+# ==========================================
+class SmartPickerApp:
+    """主应用程序类"""
+    
+    def __init__(self, root):
+        self.root = root
+        self.config = ConfigManager()
+        self.data_manager = DataManager()
+        self.voice_manager = VoiceManager()
+        self.animation_engine = AnimationEngine(root)
+        
+        # 版本信息
+        self.current_version = "3.0.0"
+        self.github_user = "deng121200"
+        self.github_repo = "Smart-Random-Picker"
+        
+        # 数据状态
+        self.names = []
+        self.blacklist = []
+        self.is_rolling = False
+        self.history_counter = 0
+        self.history_data = []
+        
+        # 音频相关
+        self.audio_enabled = False
+        self.rolling_sounds = []
+        
+        # 初始化
+        self._setup_window()
+        self._setup_ui()
+        self._setup_audio()
+        self.load_data()
+        
+        # 启动后台任务
+        if self.config.get_bool('GENERAL', 'auto_check_update', True):
+            threading.Thread(target=self.check_for_updates, daemon=True).start()
+    
+    def _setup_window(self):
+        """设置主窗口"""
+        self.root.title(f"SmartPicker v{self.current_version} (Win7 纯净语音版)")
+        
+        # 设置窗口大小和位置（居中）
         width, height = 800, 600
         self.root.update_idletasks()
-        x = (self.root.winfo_screenwidth() // 2) - (width // 2)
-        y = (self.root.winfo_screenheight() // 2) - (height // 2)
+        screen_width = self.root.winfo_screenwidth()
+        screen_height = self.root.winfo_screenheight()
+        x = (screen_width // 2) - (width // 2)
+        y = (screen_height // 2) - (height // 2)
         self.root.geometry(f'{width}x{height}+{x}+{y}')
         
-        # 默认背景色 (清爽蓝灰)
+        # 设置窗口背景色
         self.root.configure(bg="#f0f4f8")
-
-        # 在线更新与反馈配置
-        self.github_user = "deng121200" 
-        self.github_repo = "Smart-Random-Picker"
-        self.update_url = f"https://raw.githubusercontent.com/{self.github_user}/{self.github_repo}/main/version.txt"
-        self.release_url = f"https://github.com/{self.github_user}/{self.github_repo}/releases"
-
-        self.audio_enabled = False
-        try:
-            pygame.mixer.init()
-            self.audio_enabled = True
-        except:
-            pass 
         
-        self.names = []
-        self.skip_names = []
-        self.is_rolling = False
-        
-        self.rolling_sounds = [os.path.join(BASE_DIR, f) for f in os.listdir(BASE_DIR) if f.startswith('rolling') and f.endswith('.mp3')]
-
-        # --- UI 布局 ---
-        self.title_label = tk.Label(root, text="课堂随机点名", font=("Microsoft YaHei", 28, "bold"), bg="#f0f4f8", fg="#333")
+        # 设置窗口图标（如果存在）
+        icon_path = os.path.join(BASE_DIR, "icon.ico")
+        if os.path.exists(icon_path):
+            try:
+                self.root.iconbitmap(icon_path)
+            except Exception as e:
+                print(f"【提示】无法加载窗口图标: {e}")
+    
+    def _setup_ui(self):
+        """设置用户界面"""
+        # 标题栏（支持双击打开密码菜单）
+        self.title_label = tk.Label(
+            self.root, 
+            text="课堂随机点名", 
+            font=("Microsoft YaHei", 28, "bold"), 
+            bg="#f0f4f8", 
+            fg="#333"
+        )
         self.title_label.pack(pady=20)
-        self.title_label.bind("<Double-Button-1>", self.open_secret_menu) 
-
-        self.name_display = tk.Label(root, text="准备就绪", font=("Microsoft YaHei", 55, "bold"), 
-                                     bg="#f0f4f8", fg="#0056b3", wraplength=750)
-        self.name_display.pack(pady=20, expand=True)
-
-        self.control_frame = tk.Frame(root, bg="#f0f4f8")
+        self.title_label.bind("<Double-Button-1>", self.open_secret_menu)
+        
+        # 主显示区域
+        self.name_display = tk.Label(
+            self.root,
+            text="准备就绪",
+            font=("Microsoft YaHei", 55, "bold"),
+            bg="#f0f4f8",
+            fg="#0056b3",
+            wraplength=750,
+            justify="center"
+        )
+        self.name_display.pack(pady=20, expand=True, fill=tk.BOTH)
+        
+        # 控制面板
+        self.control_frame = tk.Frame(self.root, bg="#f0f4f8")
         self.control_frame.pack(pady=10)
-
-        self.btn = tk.Button(self.control_frame, text="开 始", font=("Microsoft YaHei", 20, "bold"), bg="#4caf50", fg="white", 
-                             command=self.toggle_roll, width=12, relief="flat", cursor="hand2")
+        
+        # 开始/停止按钮
+        self.btn = tk.Button(
+            self.control_frame,
+            text="开 始",
+            font=("Microsoft YaHei", 20, "bold"),
+            bg="#4caf50",
+            fg="white",
+            command=self.toggle_roll,
+            width=12,
+            relief="flat",
+            cursor="hand2",
+            activebackground="#45a049",
+            activeforeground="white"
+        )
         self.btn.grid(row=0, column=0, padx=20)
-
+        
+        # 抽取人数滑块
         self.slider_frame = tk.Frame(self.control_frame, bg="#f0f4f8")
         self.slider_frame.grid(row=0, column=1, padx=10)
-        tk.Label(self.slider_frame, text="抽取人数:", font=("Microsoft YaHei", 12), bg="#f0f4f8").pack(side=tk.LEFT)
-        self.draw_count_slider = tk.Scale(self.slider_frame, from_=1, to=20, orient=tk.HORIZONTAL, 
-                                          bg="#f0f4f8", length=120, font=("Microsoft YaHei", 10))
+        
+        tk.Label(
+            self.slider_frame,
+            text="抽取人数:",
+            font=("Microsoft YaHei", 12),
+            bg="#f0f4f8"
+        ).pack(side=tk.LEFT)
+        
+        default_count = self.config.get_int('PICKER', 'default_draw_count', 1)
+        max_count = self.config.get_int('PICKER', 'max_draw_count', 20)
+        
+        self.draw_count_slider = tk.Scale(
+            self.slider_frame,
+            from_=1,
+            to=max_count,
+            orient=tk.HORIZONTAL,
+            bg="#f0f4f8",
+            length=120,
+            font=("Microsoft YaHei", 10),
+            sliderlength=20,
+            tickinterval=4
+        )
+        self.draw_count_slider.set(default_count)
         self.draw_count_slider.pack(side=tk.LEFT)
-
-        # 手动刷新名单按钮
-        self.refresh_btn = tk.Button(self.control_frame, text="🔄 刷新", font=("Microsoft YaHei", 12, "bold"), 
-                                     bg="#00bcd4", fg="white", command=self.manual_refresh, 
-                                     width=8, relief="flat", cursor="hand2")
+        
+        # 刷新按钮
+        self.refresh_btn = tk.Button(
+            self.control_frame,
+            text="🔄 刷新",
+            font=("Microsoft YaHei", 12, "bold"),
+            bg="#00bcd4",
+            fg="white",
+            command=self.manual_refresh,
+            width=8,
+            relief="flat",
+            cursor="hand2",
+            activebackground="#00acc1"
+        )
         self.refresh_btn.grid(row=0, column=2, padx=10)
-
-        # 反馈按钮
-        self.feedback_btn = tk.Button(self.control_frame, text="🐛 反馈建议", font=("Microsoft YaHei", 12, "bold"), 
-                                      bg="#ff9800", fg="white", command=self.open_feedback_page, 
-                                      width=10, relief="flat", cursor="hand2")
+        
+        # 反馈建议按钮
+        self.feedback_btn = tk.Button(
+            self.control_frame,
+            text="🐛 反馈建议",
+            font=("Microsoft YaHei", 12, "bold"),
+            bg="#ff9800",
+            fg="white",
+            command=self.open_feedback_page,
+            width=10,
+            relief="flat",
+            cursor="hand2",
+            activebackground="#f57c00"
+        )
         self.feedback_btn.grid(row=0, column=3, padx=10)
-
-        self.bottom_frame = tk.Frame(root, bg="#f0f4f8")
+        
+        # 语音开关按钮
+        self.voice_toggle_btn = tk.Button(
+            self.control_frame,
+            text="🔊 语音" if self.voice_manager.enabled else "🔇 静音",
+            font=("Microsoft YaHei", 12, "bold"),
+            bg="#9c27b0" if self.voice_manager.enabled else "#757575",
+            fg="white",
+            command=self.toggle_voice,
+            width=8,
+            relief="flat",
+            cursor="hand2",
+            activebackground="#7b1fa2"
+        )
+        self.voice_toggle_btn.grid(row=0, column=4, padx=10)
+        
+        # 底部面板
+        self.bottom_frame = tk.Frame(self.root, bg="#f0f4f8")
         self.bottom_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=20, pady=20)
-
+        
+        # 历史记录区域
         self.history_frame = tk.Frame(self.bottom_frame, bg="#f0f4f8")
         self.history_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        tk.Label(self.history_frame, text="📜 抽取历史:", font=("Microsoft YaHei", 10, "bold"), bg="#f0f4f8", fg="#666").pack(anchor="w")
         
+        tk.Label(
+            self.history_frame,
+            text="📜 抽取历史:",
+            font=("Microsoft YaHei", 10, "bold"),
+            bg="#f0f4f8",
+            fg="#666"
+        ).pack(anchor="w")
+        
+        # 历史记录文本框（带滚动条）
         self.hist_scroll = tk.Scrollbar(self.history_frame)
         self.hist_scroll.pack(side=tk.RIGHT, fill=tk.Y)
-        self.history_text = tk.Text(self.history_frame, height=5, width=40, font=("Microsoft YaHei", 10), 
-                                    yscrollcommand=self.hist_scroll.set, state=tk.DISABLED, bg="#ffffff")
-        self.history_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        self.hist_scroll.config(command=self.history_text.yview)
-
-        self.signature_label = tk.Label(self.bottom_frame, text=f"v{self.current_version} | 灵感来源于我\nInspiration from @遇屿迟", 
-                                        font=("Microsoft YaHei", 10), bg="#f0f4f8", fg="#999999", justify=tk.RIGHT)
-        self.signature_label.pack(side=tk.RIGHT, anchor="s", padx=10)
-
-        self.load_data()
-        threading.Thread(target=self.check_for_updates, daemon=True).start()
-
-    # ==========================================
-    # 【引擎】：智能双模文本解码器
-    # ==========================================
-    def safe_read_file(self, file_path):
-        if not os.path.exists(file_path):
-            return None
-            
-        try:
-            with open(file_path, "r", encoding="utf-8-sig") as f:
-                return [line.strip() for line in f if line.strip()]
-        except UnicodeDecodeError:
-            try:
-                with open(file_path, "r", encoding="gbk") as f:
-                    return [line.strip() for line in f if line.strip()]
-            except Exception as e:
-                print(f"读取文件发生未知错误: {e}")
-                return []
-
-    def load_data(self):
-        mingdan_path = os.path.join(BASE_DIR, "名单.txt")
-        names_data = self.safe_read_file(mingdan_path)
         
-        if names_data is None:
-            self.name_display.config(text="未找到名单.txt", fg="red")
-            self.names = []
+        self.history_text = tk.Text(
+            self.history_frame,
+            height=5,
+            width=40,
+            font=("Microsoft YaHei", 10),
+            yscrollcommand=self.hist_scroll.set,
+            state=tk.DISABLED,
+            bg="#ffffff",
+            relief="flat",
+            borderwidth=1
+        )
+        self.history_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        # 配置文本标签样式
+        self.history_text.tag_config("even_row", background="#f9f9f9")
+        self.history_text.tag_config("odd_row", background="#ffffff")
+        
+        self.hist_scroll.config(command=self.history_text.yview)
+        
+        # 签名标签
+        self.signature_label = tk.Label(
+            self.bottom_frame,
+            text=f"v{self.current_version} | 灵感来源于我\nInspiration from @遇屿迟",
+            font=("Microsoft YaHei", 10),
+            bg="#f0f4f8",
+            fg="#999999",
+            justify=tk.RIGHT
+        )
+        self.signature_label.pack(side=tk.RIGHT, anchor="s", padx=10)
+    
+    def _setup_audio(self):
+        """设置音频系统"""
+        if PYGAME_AVAILABLE and self.config.get_bool('AUDIO', 'enable_sound', True):
+            try:
+                pygame.mixer.init(frequency=22050, size=-16, channels=2, buffer=512)
+                self.audio_enabled = True
+                print("【提示】音频系统初始化成功")
+                
+                # 查找滚动音效文件
+                sound_files = [f for f in os.listdir(BASE_DIR) 
+                              if f.startswith('rolling') and f.endswith('.mp3')]
+                self.rolling_sounds = [os.path.join(BASE_DIR, f) for f in sound_files]
+                
+                if self.rolling_sounds:
+                    print(f"【提示】找到 {len(self.rolling_sounds)} 个滚动音效文件")
+            except Exception as e:
+                print(f"【提示】音频系统初始化失败: {e}")
+                self.audio_enabled = False
         else:
-            self.names = names_data
-            if not self.names:
-                self.name_display.config(text="名单为空")
-            else:
-                self.name_display.config(fg="#0056b3")
-
-        heimingdan_path = os.path.join(BASE_DIR, "黑名单.txt")
-        skip_data = self.safe_read_file(heimingdan_path)
-        self.skip_names = skip_data if skip_data is not None else []
-
-    # ==========================================
-    # 【漏洞修复】：移除刷新按钮的防漏信息
-    # ==========================================
+            self.audio_enabled = False
+    
+    def load_data(self):
+        """加载名单数据"""
+        self.names, self.blacklist = self.data_manager.load_all_data()
+        
+        if not self.names:
+            self.name_display.config(text="未找到名单.txt", fg="red")
+        elif len(self.names) == 0:
+            self.name_display.config(text="名单为空")
+        else:
+            self.name_display.config(
+                text=f"已加载 {len(self.names)} 名学生\n{len(self.blacklist)} 人在黑名单",
+                fg="#0056b3",
+                font=("Microsoft YaHei", 24, "bold")
+            )
+    
     def manual_refresh(self):
+        """手动刷新名单"""
         self.load_data()
         count = len(self.names)
-        # 只显示总名单人数，绝口不提跳过人员，确保暗箱完全隐蔽
-        messagebox.showinfo("刷新成功", f"名单已更新！\n当前读取到 {count} 名学生。", parent=self.root)
-
+        messagebox.showinfo(
+            "刷新成功",
+            f"名单已更新！\n当前读取到 {count} 名学生。",
+            parent=self.root
+        )
+    
     def open_feedback_page(self):
+        """打开反馈页面"""
         feedback_url = f"https://github.com/{self.github_user}/{self.github_repo}/issues"
         try:
             webbrowser.open(feedback_url)
-        except Exception as e:
-            messagebox.showerror("连接失败", f"无法自动打开浏览器，请手动复制网址访问：\n\n{feedback_url}", parent=self.root)
-
+        except Exception:
+            messagebox.showerror(
+                "连接失败",
+                f"无法自动打开浏览器，请手动复制网址访问：\n\n{feedback_url}",
+                parent=self.root
+            )
+    
     def check_for_updates(self):
+        """检查更新"""
+        update_url = f"https://raw.githubusercontent.com/{self.github_user}/{self.github_repo}/main/version.txt"
+        release_url = f"https://github.com/{self.github_user}/{self.github_repo}/releases"
+        
         try:
-            req = urllib.request.Request(self.update_url, headers={'User-Agent': 'Mozilla/5.0'})
+            req = urllib.request.Request(
+                update_url,
+                headers={'User-Agent': 'SmartPicker/3.0 (Windows 7 Compatible)'}
+            )
             with urllib.request.urlopen(req, timeout=5) as response:
                 content = response.read().decode('utf-8').strip()
                 remote_version = content.split('\n')[-1].strip()
+                
                 if remote_version != self.current_version:
-                    if messagebox.askyesno("更新提示", f"发现新版本 v{remote_version}！\n是否前往下载？", parent=self.root):
-                        webbrowser.open(self.release_url)
-        except:
-            pass
-
+                    if messagebox.askyesno(
+                        "更新提示",
+                        f"发现新版本 v{remote_version}！\n是否前往下载？",
+                        parent=self.root
+                    ):
+                        webbrowser.open(release_url)
+        except Exception:
+            pass  # 静默失败
+    
     def open_secret_menu(self, event):
-        pwd = simpledialog.askstring("管理员验证", "请输入密码:", show='*', parent=self.root)
+        """打开密码菜单"""
+        pwd = simpledialog.askstring(
+            "管理员验证",
+            "请输入密码:",
+            show='*',
+            parent=self.root
+        )
+        
         if pwd == "114514":
             self.load_data()
-            # 只有这里才会显示拦截数量，尽在管理员掌握
-            messagebox.showinfo("成功", f"暗箱操作已就绪！\n已从本地读取 {len(self.skip_names)} 名跳过人员。", parent=self.root)
+            messagebox.showinfo(
+                "成功",
+                f"暗箱操作已就绪！\n已从本地读取 {len(self.blacklist)} 名跳过人员。",
+                parent=self.root
+            )
         elif pwd is not None:
             messagebox.showerror("错误", "密码错误！", parent=self.root)
-
-    def update_names_display(self, names_list):
+    
+    def toggle_voice(self):
+        """切换语音开关"""
+        current_state = self.voice_manager.enabled
+        new_state = not current_state
+        
+        self.config.set('PICKER', 'voice_enabled', str(new_state).lower())
+        self.voice_manager.enabled = new_state
+        
+        # 更新按钮状态
+        if new_state:
+            self.voice_toggle_btn.config(
+                text="🔊 语音",
+                bg="#9c27b0",
+                activebackground="#7b1fa2"
+            )
+            messagebox.showinfo("提示", "语音播报已启用", parent=self.root)
+        else:
+            self.voice_toggle_btn.config(
+                text="🔇 静音",
+                bg="#757575",
+                activebackground="#616161"
+            )
+            messagebox.showinfo("提示", "语音播报已禁用", parent=self.root)
+    
+    def update_names_display(self, names_list: List[str]):
+        """更新名字显示"""
+        if not names_list:
+            return
+        
         text = "、".join(names_list)
         count = len(names_list)
         
+        # 根据人数动态调整字体大小
         if count <= 2:
             font_size = 55
         elif count <= 5:
@@ -209,54 +921,198 @@ class RandomPickerApp:
             font_size = 28
         else:
             font_size = 22
-            
-        self.name_display.config(text=text, font=("Microsoft YaHei", font_size, "bold"))
-
+        
+        self.name_display.config(
+            text=text,
+            font=("Microsoft YaHei", font_size, "bold")
+        )
+    
     def toggle_roll(self):
+        """开始/停止抽取"""
         if not self.is_rolling:
+            # 开始前重新加载数据
             self.load_data()
-            
+        
         if not self.names:
-            messagebox.showwarning("警告", "请确保程序同目录下有 名单.txt 文件")
+            messagebox.showwarning(
+                "警告",
+                "请确保程序同目录下有 名单.txt 文件"
+            )
             return
         
         if not self.is_rolling:
-            self.is_rolling = True
-            self.btn.config(text="停 止", bg="#f44336")
-            if self.audio_enabled and self.rolling_sounds:
-                try:
-                    pygame.mixer.music.load(random.choice(self.rolling_sounds))
-                    pygame.mixer.music.play(-1)
-                except:
-                    pass
-            self.update_rolling()
+            # 开始抽取
+            self.start_rolling()
         else:
-            self.is_rolling = False
-            self.btn.config(text="开 始", bg="#4caf50")
-            if self.audio_enabled:
-                pygame.mixer.music.stop()
-            self.finish_roll()
-
+            # 停止抽取
+            self.stop_rolling()
+    
+    def start_rolling(self):
+        """开始抽取"""
+        self.is_rolling = True
+        self.btn.config(text="停 止", bg="#f44336", activebackground="#d32f2f")
+        
+        # 播放滚动音效
+        if self.audio_enabled and self.rolling_sounds:
+            try:
+                sound_file = random.choice(self.rolling_sounds)
+                pygame.mixer.music.load(sound_file)
+                pygame.mixer.music.set_volume(
+                    self.config.get_int('AUDIO', 'rolling_sound_volume', 80) / 100.0
+                )
+                pygame.mixer.music.play(-1)  # 循环播放
+            except Exception as e:
+                print(f"【提示】音效播放失败: {e}")
+        
+        # 开始动画效果
+        self.animation_engine.color_transition(
+            self.name_display,
+            "#0056b3",
+            "#2196f3",
+            300
+        )
+        
+        # 开始滚动更新
+        self.update_rolling()
+    
+    def stop_rolling(self):
+        """停止抽取"""
+        self.is_rolling = False
+        self.btn.config(text="开 始", bg="#4caf50", activebackground="#45a049")
+        
+        # 停止音效
+        if self.audio_enabled:
+            pygame.mixer.music.stop()
+        
+        # 执行最终抽取
+        self.finish_roll()
+    
     def update_rolling(self):
+        """更新滚动状态"""
         if self.is_rolling:
             count = self.draw_count_slider.get()
             pool = self.names
+            
             if pool:
+                # 生成临时抽取结果（模拟滚动）
                 fake_winners = random.sample(pool, min(count, len(pool)))
                 self.update_names_display(fake_winners)
-            self.root.after(50, self.update_rolling)
-
-    def finish_roll(self):
-        count = self.draw_count_slider.get()
-        pool = [n for n in self.names if n not in self.skip_names]
-        if not pool:
-            pool = self.names
             
-        winners = random.sample(pool, min(count, len(pool)))
+            # 继续滚动（自适应速度）
+            speed = self.animation_engine.animation_speed
+            self.root.after(speed, self.update_rolling)
+    
+    def finish_roll(self):
+        """执行最终抽取"""
+        count = self.draw_count_slider.get()
+        
+        # 应用黑名单
+        if self.config.get_bool('PICKER', 'enable_blacklist', True):
+            pool = [n for n in self.names if n not in self.blacklist]
+            if not pool:  # 如果所有人都被屏蔽，则使用完整名单
+                pool = self.names
+        else:
+            pool = self.names
+        
+        # 确保抽取人数不超过可用人数
+        actual_count = min(count, len(pool))
+        if actual_count <= 0:
+            messagebox.showwarning("警告", "没有可抽取的学生！")
+            self.name_display.config(text="名单为空", fg="red")
+            return
+        
+        # 执行抽取
+        winners = random.sample(pool, actual_count)
+        
+        # 显示结果
         self.update_names_display(winners)
+        
+        # 播放胜利动画
+        self.animation_engine.victory_animation(self.name_display, winners)
+        
+        # 添加到历史记录
         self.add_to_history(winners)
+        
+        # 语音播报
+        if self.voice_manager.enabled:
+            self.voice_manager.speak_winners(winners)
+    
+    def add_to_history(self, winners: List[str]):
+        """添加到历史记录"""
+        if not winners:
+            return
+        
+        # 生成时间戳
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self.history_counter += 1
+        
+        # 生成历史条目
+        count = len(winners)
+        winners_text = "、".join(winners)
+        history_entry = f"{self.history_counter:03d}. [{timestamp}] 抽取{count}人: {winners_text}\n"
+        
+        # 保存到历史数据
+        self.history_data.append({
+            "id": self.history_counter,
+            "timestamp": timestamp,
+            "count": count,
+            "winners": winners,
+            "blacklist_used": self.config.get_bool('PICKER', 'enable_blacklist', True)
+        })
+        
+        # 更新UI
+        self.history_text.config(state=tk.NORMAL)
+        
+        # 交替行颜色
+        if self.history_counter % 2 == 0:
+            self.history_text.insert(tk.END, history_entry, "even_row")
+        else:
+            self.history_text.insert(tk.END, history_entry, "odd_row")
+        
+        self.history_text.see(tk.END)  # 滚动到底部
+        self.history_text.config(state=tk.DISABLED)
+        
+        # 保存到文件（异步）
+        if self.config.get_bool('GENERAL', 'enable_logging', True):
+            threading.Thread(
+                target=self.data_manager.save_history,
+                args=(self.history_data,),
+                daemon=True
+            ).start()
+
+# ==========================================
+# 主程序入口
+# ==========================================
+def main():
+    """主程序入口"""
+    try:
+        # 创建主窗口
+        root = tk.Tk()
+        
+        # 创建应用程序实例
+        app = SmartPickerApp(root)
+        
+        # 启动主事件循环
+        root.mainloop()
+        
+    except Exception as e:
+        print(f"【致命错误】程序启动失败: {e}")
+        print("=" * 50)
+        print("请检查以下可能的问题：")
+        print("1. 确保Python版本为3.8.10 (64位)")
+        print("2. 确保安装了必要的依赖：pip install pygame pywin32")
+        print("3. 确保运行在Windows 7 SP1或更高版本")
+        print("4. 确保有名单.txt文件在程序目录")
+        print("=" * 50)
+        
+        # 尝试显示错误对话框
+        try:
+            messagebox.showerror(
+                "启动失败",
+                f"程序启动失败，请检查控制台输出。\n错误信息: {str(e)[:100]}..."
+            )
+        except:
+            pass
 
 if __name__ == "__main__":
-    root = tk.Tk()
-    app = RandomPickerApp(root)
-    root.mainloop()
+    main()
