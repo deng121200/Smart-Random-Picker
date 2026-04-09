@@ -3,320 +3,165 @@ name: SmartPicker V3.0 自动打包 (终极严谨版)
 on:
   push:
     tags:
-      - 'v*'  # 触发条件：推送以v开头的标签
+      - 'v*'
 
-# ==========================================
-# 权限声明（必须）
-# ==========================================
 permissions:
   contents: write
 
-# ==========================================
-# 构建任务
-# ==========================================
 jobs:
   build:
-    # Windows最新环境（已内置Python 3.8支持）
     runs-on: windows-latest
     
     steps:
-      # ==========================================
-      # 步骤1：检出代码（官方动作，100%可靠）
-      # ==========================================
       - name: 检出代码
         uses: actions/checkout@v4
 
-      # ==========================================
-      # 步骤2：设置Python 3.8环境（精确版本）
-      # ==========================================
       - name: 设置Python 3.8环境
         uses: actions/setup-python@v5
         with:
-          python-version: '3.8'  # 精确指定3.8，避免自动升级
-          architecture: 'x64'    # 64位架构，匹配您的Win7
+          python-version: '3.8'
+          architecture: 'x64'
 
-      # ==========================================
-      # 步骤3：安装依赖（最安全的CMD语法）
-      # ==========================================
       - name: 安装依赖
-        shell: cmd  # 强制使用CMD语法，避免PowerShell解析错误
-        run: |
-          @echo off
-          echo [步骤3] 开始安装依赖...
-          
-          echo 正在安装 pygame==2.5.2...
-          pip install pygame==2.5.2
-          if errorlevel 1 (
-            echo ❌ pygame安装失败
-            exit /b 1
-          )
-          
-          echo 正在安装 pywin32==306...
-          pip install pywin32==306
-          if errorlevel 1 (
-            echo ❌ pywin32安装失败
-            exit /b 1
-          )
-          
-          echo 正在安装 pyinstaller==5.13.2...
-          pip install pyinstaller==5.13.2
-          if errorlevel 1 (
-            echo ❌ pyinstaller安装失败
-            exit /b 1
-          )
-          
-          echo ✅ 所有依赖安装完成！
-
-      # ==========================================
-      # 步骤4：文件验证（绝对严谨的文件检查）
-      # ==========================================
-      - name: 文件验证
         shell: cmd
         run: |
           @echo off
-          echo [步骤4] 文件验证...
-          
-          REM ===== 核心文件检查 =====
-          echo 检查主程序文件...
+          echo [步骤3] 安装依赖...
+          pip install pygame==2.5.2 pywin32==306 pyinstaller==5.13.2
+          if errorlevel 1 (
+            echo ❌ 依赖安装失败
+            exit /b 1
+          )
+          echo ✅ 依赖安装完成
+
+      - name: 检查主文件
+        shell: cmd
+        run: |
+          @echo off
           if not exist "dianming.py" (
-            echo ❌ 致命错误：未找到主程序文件 dianming.py
-            echo 当前目录文件列表：
-            dir /b
-            echo 请确保您的源码文件名为 dianming.py
+            echo ❌ 未找到 dianming.py
             exit /b 1
           )
-          echo ✅ 找到主程序：dianming.py
-          
-          REM ===== 辅助文件检查（非致命） =====
-          if exist "名单.txt" (
-            echo ✅ 找到名单文件：名单.txt
-          ) else (
-            echo ℹ️  未找到名单.txt，将自动创建示例文件
-          )
-          
-          if exist "黑名单.txt" (
-            echo ✅ 找到黑名单文件：黑名单.txt
-          )
-          
-          if exist "icon.ico" (
-            echo ✅ 找到图标文件：icon.ico
-          ) else (
-            echo ℹ️  未找到图标文件，将使用默认图标
-          )
-          
-          echo ✅ 文件验证通过！
+          echo ✅ 找到 dianming.py
 
-      # ==========================================
-      # 步骤5：PyInstaller打包（最简参数，避免复杂依赖）
-      # ==========================================
-      - name: PyInstaller打包
+      - name: 执行PyInstaller打包
         shell: cmd
         run: |
           @echo off
-          echo [步骤5] 开始PyInstaller打包...
+          echo [步骤5] 开始打包...
           
-          REM ===== 图标参数处理 =====
-          set ICON_PARAM=
+          REM 【吸收R1修复方案】：展开为单行命令，彻底消灭 ^ 续行符带来的解析断层
           if exist "icon.ico" (
-            set ICON_PARAM=--icon=icon.ico
-            echo 使用自定义图标：icon.ico
+            echo 发现自定义图标，使用图标打包...
+            pyinstaller --noconsole --onefile --clean --name "SmartPicker" --icon=icon.ico --hidden-import=pygame --hidden-import=win32com --hidden-import=win32com.client --hidden-import=win32com.extracommod dianming.py
+          ) else (
+            echo 未发现自定义图标，使用默认图标打包...
+            pyinstaller --noconsole --onefile --clean --name "SmartPicker" --hidden-import=pygame --hidden-import=win32com --hidden-import=win32com.client --hidden-import=win32com.extracommod dianming.py
           )
           
-          REM ===== 打印完整命令（便于调试） =====
-          echo 执行的完整命令：
-          echo pyinstaller --noconsole --onefile --clean --name "SmartPicker" ^
-            --hidden-import=pygame ^
-            --hidden-import=win32com ^
-            --hidden-import=win32com.client ^
-            %ICON_PARAM% ^
-            dianming.py
-          
-          REM ===== 执行打包（使用续行符确保可读性） =====
-          pyinstaller --noconsole --onefile --clean --name "SmartPicker" ^
-            --hidden-import=pygame ^
-            --hidden-import=win32com ^
-            --hidden-import=win32com.client ^
-            %ICON_PARAM% ^
-            dianming.py
-          
-          REM ===== 错误检查 =====
           if errorlevel 1 (
-            echo ❌ PyInstaller打包失败！
-            echo 常见原因：
-            echo 1. Python模块导入错误
-            echo 2. 文件路径包含特殊字符
-            echo 3. 内存不足
+            echo ❌ 打包失败
             exit /b 1
           )
-          
-          echo ✅ PyInstaller打包成功！
+          echo ✅ 打包成功
 
-      # ==========================================
-      # 步骤6：打包结果验证（纯CMD，无复杂运算）
-      # ==========================================
-      - name: 打包结果验证
+      - name: 验证与创建便携版
         shell: cmd
         run: |
           @echo off
-          echo [步骤6] 验证打包结果...
-          
-          REM ===== 检查可执行文件是否存在 =====
-          set "EXE_PATH=dist\SmartPicker.exe"
-          if not exist "%EXE_PATH%" (
-            echo ❌ 致命错误：未生成可执行文件
-            echo 预期路径：%EXE_PATH%
-            echo 实际dist目录内容：
-            if exist dist (
-              dir /b dist
-            ) else (
-              echo dist目录不存在！
-            )
+          if not exist "dist\SmartPicker.exe" (
+            echo ❌ 未生成可执行文件
             exit /b 1
           )
           
-          REM ===== 获取文件信息（安全方式） =====
-          echo ✅ 打包文件：%EXE_PATH%
-          
-          REM 使用dir命令获取文件大小
-          for /f "tokens=3" %%i in ('dir /a-d "%EXE_PATH%" ^| find /i "SmartPicker.exe"') do (
-            echo 📦 文件大小：%%i
-          )
-          
-          REM ===== 显示构建产物 =====
-          echo 📁 构建产物目录：
-          dir /b dist
-
-      # ==========================================
-      # 步骤7：创建便携版（稳健的ZIP创建）
-      # ==========================================
-      - name: 创建便携版
-        shell: cmd
-        run: |
-          @echo off
-          echo [步骤7] 创建便携版...
-          
-          REM ===== 清理并创建目录 =====
-          if exist portable (
-            echo 清理旧版便携目录...
-            rmdir /s /q portable
-          )
+          echo 清理并创建便携版目录...
+          if exist portable rmdir /s /q portable
           mkdir portable
           
-          REM ===== 复制核心文件 =====
-          echo 复制可执行文件...
           copy "dist\SmartPicker.exe" "portable\SmartPicker.exe" >nul
-          if exist "portable\SmartPicker.exe" (
-            echo ✅ SmartPicker.exe 已复制
-          ) else (
-            echo ❌ 复制失败
-            exit /b 1
-          )
+          copy "dianming.py" "portable\源码_backup.py" >nul 2>&1
           
-          REM ===== 复制源码（备份） =====
-          if exist "dianming.py" (
-            copy "dianming.py" "portable\源码_backup.py" >nul
-            echo ✅ 源码已备份
-          )
-          
-          REM ===== 处理名单文件 =====
           if exist "名单.txt" (
             copy "名单.txt" "portable\名单.txt" >nul
-            echo ✅ 名单.txt 已复制
           ) else (
-            echo 创建示例名单文件...
-            (
-              echo 张三
-              echo 李四
-              echo 王五
-              echo 赵六
-              echo 钱七
-            ) > portable\名单.txt
-            echo ✅ 示例名单已创建
+            echo 张三> portable\名单.txt
+            echo 李四>> portable\名单.txt
+            echo 王五>> portable\名单.txt
           )
           
-          REM ===== 处理黑名单文件 =====
-          if exist "黑名单.txt" (
-            copy "黑名单.txt" "portable\黑名单.txt" >nul
-            echo ✅ 黑名单.txt 已复制
-          )
+          if exist "黑名单.txt" copy "黑名单.txt" "portable\黑名单.txt" >nul
           
-          REM ===== 创建配置文件 =====
-          echo 创建配置文件...
+          REM 保留了完整的 config.ini 模板
           (
+            echo # SmartPicker V3.0 配置文件
             echo [GENERAL]
             echo version = 3.0.0
+            echo language = zh_CN
             echo auto_check_update = true
+            echo enable_logging = true
+            echo log_level = INFO
             echo.
             echo [UI]
+            echo theme = light
             echo animation_speed = medium
+            echo font_family = Microsoft YaHei
             echo enable_animations = true
             echo.
             echo [PICKER]
             echo default_draw_count = 1
+            echo max_draw_count = 20
             echo enable_blacklist = true
             echo voice_enabled = true
+            echo voice_rate = 0
+            echo voice_volume = 100
             echo.
             echo [AUDIO]
             echo enable_sound = true
             echo rolling_sound_volume = 80
+            echo victory_sound_volume = 100
           ) > portable\config.ini
-          echo ✅ config.ini 已创建
           
-          REM ===== 创建说明文件 =====
-          echo 创建说明文件...
+          REM 保留了面向小白的 README 说明书
           (
             echo ====================================
-            echo    SmartPicker V3.0 便携版
+            echo SmartPicker V3.0 便携版
             echo ====================================
+            echo 版本: 3.0.0
+            echo 系统要求: Windows 7 SP1 (64位)
             echo.
-            echo 使用步骤：
-            echo 1. 解压此ZIP到任意文件夹
-            echo 2. 编辑名单.txt添加学生姓名
-            echo 3. 双击运行 SmartPicker.exe
+            echo 包含文件:
+            echo 1. SmartPicker.exe     - 主程序
+            echo 2. 名单.txt            - 学生名单
+            echo 3. 黑名单.txt          - 跳过名单（可选）
+            echo 4. config.ini          - 配置文件
+            echo 5. 源码_backup.py      - 源代码备份
             echo.
-            echo 功能特点：
-            echo ✓ 随机点名抽取
-            echo ✓ 语音播报结果
-            echo ✓ 黑名单管理
-            echo ✓ 动画效果
+            echo 使用说明:
+            echo 1. 解压到任意文件夹
+            echo 2. 编辑 名单.txt 添加学生姓名
+            echo 3. 双击 SmartPicker.exe 运行
             echo.
-            echo 高级功能：
-            echo - 双击标题栏输入密码 114514
-            echo - 配置文件：config.ini
+            echo 注意事项:
+            echo - 无需安装 Python
+            echo - 支持语音播报
+            echo - 双击标题栏输入密码 114514 激活暗箱功能
             echo.
-            echo 项目主页：
-            echo https://github.com/deng121200/Smart-Random-Picker
+            echo 项目地址: https://github.com/deng121200/Smart-Random-Picker
             echo ====================================
           ) > portable\README.txt
-          echo ✅ README.txt 已创建
           
-          REM ===== 创建ZIP文件（使用PowerShell，但捕获错误） =====
-          echo 正在创建ZIP文件...
-          powershell -Command "try { Compress-Archive -Path 'portable\*' -DestinationPath 'SmartPicker_V3.0.0_Portable.zip' -Force; Write-Output 'ZIP创建成功' } catch { Write-Error 'ZIP创建失败: $_'; exit 1 }"
-          
-          if exist "SmartPicker_V3.0.0_Portable.zip" (
-            echo ✅ 便携版创建完成：SmartPicker_V3.0.0_Portable.zip
-          ) else (
-            echo ❌ ZIP文件创建失败
-            exit /b 1
-          )
+          powershell -Command "Compress-Archive -Path 'portable\*' -DestinationPath 'SmartPicker_V3.0.0_Portable.zip' -Force"
 
-      # ==========================================
-      # 步骤8：上传到GitHub Releases
-      # ==========================================
       - name: 上传到GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
-          # 上传文件列表
           files: |
             dist/SmartPicker.exe
             SmartPicker_V3.0.0_Portable.zip
             dianming.py
-          # 发布设置
           draft: false
           prerelease: false
           generate_release_notes: true
-          # 发布说明（自动生成+自定义）
           body: |
             # 🎉 SmartPicker V3.0 正式发布
             
@@ -335,7 +180,7 @@ jobs:
             1. 解压便携版到任意目录
             2. 编辑 `名单.txt` 添加学生姓名（每行一个）
             3. 运行 `SmartPicker.exe`
-            4. 双击标题栏输入 `114514` 可查看黑名单
+            4. 双击标题栏输入 `114514` 可激活暗箱
             
             ## 🔧 配置调整
             所有设置可在 `config.ini` 中调整：
@@ -347,22 +192,3 @@ jobs:
             问题反馈：[GitHub Issues](https://github.com/deng121200/Smart-Random-Picker/issues)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      # ==========================================
-      # 步骤9：清理临时文件（可选，但推荐）
-      # ==========================================
-      - name: 清理临时文件
-        if: always()  # 无论成功失败都执行清理
-        shell: cmd
-        run: |
-          @echo off
-          echo [步骤9] 清理临时文件...
-          
-          echo 清理构建缓存...
-          if exist build rmdir /s /q build
-          if exist __pycache__ rmdir /s /q __pycache__
-          
-          echo 清理便携版临时目录...
-          if exist portable rmdir /s /q portable
-          
-          echo ✅ 临时文件清理完成
