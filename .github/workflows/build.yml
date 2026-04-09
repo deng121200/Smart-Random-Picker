@@ -1,4 +1,4 @@
-name: SmartPicker V3.0 自动打包
+name: SmartPicker V3.0 自动打包 (CMD语法版)
 
 on:
   push:
@@ -6,376 +6,279 @@ on:
       - 'v*' # 当你发布以 v 开头的标签（如 v3.0.0）时触发
 
 # ==========================================
-# 【V3.0增强】显式声明所有必要权限
+# 【核心修复】使用纯CMD语法避免解析错误
 # ==========================================
 permissions:
   contents: write
-  packages: write
-  issues: write
 
 jobs:
   build:
     runs-on: windows-latest
-    # 【V3.0优化】强制使用Node.js 20，确保长期兼容
-    env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE20: true
-
+    
     steps:
+      # 步骤1: 检出代码
       - name: 检出代码
         uses: actions/checkout@v4
 
-      - name: 设置 Python 3.8 环境
+      # 步骤2: 设置Python 3.8环境
+      - name: 设置Python 3.8环境
         uses: actions/setup-python@v5
         with:
-          # 【核心兼容】强制使用 Python 3.8.10 对应版本
           python-version: '3.8'
-          architecture: 'x64'  # 确保64位构建
+          architecture: 'x64'
 
-      - name: 安装 V3.0 所有依赖
-        # 使用 PowerShell 语法
-        shell: pwsh
+      # 步骤3: 安装依赖 (使用CMD语法)
+      - name: 安装V3.0所有依赖
+        shell: cmd
         run: |
-          Write-Host "开始安装依赖..." -ForegroundColor Cyan
+          @echo off
+          echo [步骤3] 开始安装依赖...
           
-          # 安装核心依赖
           pip install pygame==2.5.2
-          pip install pywin32==306
-          pip install pyinstaller==5.13.2
-          
-          # 验证安装
-          python -c "import pygame; print('✅ pygame:', pygame.version.ver)"
-          python -c "try: import win32com.client; print('✅ pywin32: OK'); except: print('❌ pywin32: Failed')"
-          
-          Write-Host "所有依赖安装完成!" -ForegroundColor Green
-
-      - name: 执行 V3.0 智能打包
-        # 使用纯 PowerShell 语法
-        shell: pwsh
-        run: |
-          Write-Host "开始打包 SmartPicker V3.0..." -ForegroundColor Cyan
-          
-          # 检查主程序文件
-          if (-not (Test-Path "smartpicker_v3.py")) {
-            Write-Host "❌ 错误: 未找到 smartpicker_v3.py" -ForegroundColor Red
-            Write-Host "当前目录文件列表:" -ForegroundColor Yellow
-            Get-ChildItem -Name
-            exit 1
-          }
-          
-          # 创建版本文件
-          "3.0.0" | Out-File -FilePath "version.txt" -Encoding UTF8
-          Write-Host "✅ 版本文件创建完成" -ForegroundColor Green
-          
-          # 下载 UPX（如果需要压缩）
-          Write-Host "下载 UPX 压缩工具..." -ForegroundColor Cyan
-          $upxUrl = "https://github.com/upx/upx/releases/download/v4.0.2/upx-4.0.2-win64.zip"
-          $upxZip = "upx.zip"
-          $upxDir = "upx"
-          
-          try {
-            Invoke-WebRequest -Uri $upxUrl -OutFile $upxZip
-            Expand-Archive -Path $upxZip -DestinationPath $upxDir -Force
-            $upxPath = (Get-ChildItem -Path $upxDir -Recurse -Filter "upx.exe").FullName | Select-Object -First 1
-            Write-Host "✅ UPX 下载完成: $upxPath" -ForegroundColor Green
-          } catch {
-            Write-Host "⚠️  UPX 下载失败，将不使用压缩" -ForegroundColor Yellow
-            $upxPath = $null
-          }
-          
-          # 构建 PyInstaller 命令
-          $pyinstallerArgs = @(
-            "--noconsole",
-            "--onefile",
-            "--clean",
-            "--name", "SmartPicker_V3",
-            "--add-data", "version.txt;.",
-            "--hidden-import=pygame",
-            "--hidden-import=win32com",
-            "--hidden-import=win32com.client"
+          if %ERRORLEVEL% NEQ 0 (
+            echo ❌ pygame安装失败
+            exit /b 1
           )
           
-          # 添加图标（如果存在）
-          if (Test-Path "icon.ico") {
-            $pyinstallerArgs += "--icon=icon.ico"
-            Write-Host "✅ 使用自定义图标" -ForegroundColor Green
-          }
+          pip install pywin32==306
+          if %ERRORLEVEL% NEQ 0 (
+            echo ❌ pywin32安装失败
+            exit /b 1
+          )
           
-          # 添加 UPX 压缩（如果可用）
-          if ($upxPath) {
-            $upxDirPath = Split-Path $upxPath -Parent
-            $pyinstallerArgs += "--upx-dir=$upxDirPath"
-            Write-Host "✅ 启用 UPX 压缩" -ForegroundColor Green
-          }
+          pip install pyinstaller==5.13.2
+          if %ERRORLEVEL% NEQ 0 (
+            echo ❌ pyinstaller安装失败
+            exit /b 1
+          )
           
-          # 添加主程序文件
-          $pyinstallerArgs += "smartpicker_v3.py"
-          
-          Write-Host "执行 PyInstaller 命令..." -ForegroundColor Cyan
-          Write-Host "命令: pyinstaller $pyinstallerArgs" -ForegroundColor Gray
-          
-          # 执行打包
-          & pyinstaller @pyinstallerArgs
-          
-          if ($LASTEXITCODE -eq 0) {
-            Write-Host "✅ PyInstaller 打包成功!" -ForegroundColor Green
-          } else {
-            Write-Host "❌ PyInstaller 打包失败，退出码: $LASTEXITCODE" -ForegroundColor Red
-            exit 1
-          }
-          
-          # 验证打包结果
-          $exePath = "dist\SmartPicker_V3.exe"
-          if (Test-Path $exePath) {
-            $fileSize = (Get-Item $exePath).Length
-            $sizeMB = [math]::Round($fileSize / 1MB, 2)
-            Write-Host "✅ 打包完成: $exePath" -ForegroundColor Green
-            Write-Host "📦 文件大小: $sizeMB MB" -ForegroundColor Cyan
-          } else {
-            Write-Host "❌ 打包文件未找到: $exePath" -ForegroundColor Red
-            exit 1
-          }
+          echo ✅ 所有依赖安装完成!
 
+      # 步骤4: 文件检查 (使用CMD语法)
+      - name: 检查必要文件
+        shell: cmd
+        run: |
+          @echo off
+          echo [步骤4] 检查必要文件...
+          
+          if not exist "smartpicker_v3.py" (
+            echo ❌ 错误: 未找到 smartpicker_v3.py
+            echo 当前目录文件列表:
+            dir /b
+            exit /b 1
+          )
+          
+          echo ✅ 找到主程序: smartpicker_v3.py
+          
+          REM 创建版本文件
+          echo 3.0.0 > version.txt
+          echo ✅ 创建版本文件: version.txt
+
+      # 步骤5: 执行PyInstaller打包 (使用CMD语法)
+      - name: 执行PyInstaller打包
+        shell: cmd
+        run: |
+          @echo off
+          echo [步骤5] 开始PyInstaller打包...
+          
+          REM 检查是否有图标文件
+          if exist "icon.ico" (
+            set ICON_OPTION=--icon=icon.ico
+            echo ✅ 使用自定义图标
+          ) else (
+            set ICON_OPTION=
+            echo ℹ️  未找到图标文件，使用默认图标
+          )
+          
+          REM 执行打包命令
+          echo 执行命令: pyinstaller --noconsole --onefile --clean --name "SmartPicker" --add-data "version.txt;." --hidden-import=pygame --hidden-import=win32com --hidden-import=win32com.client %ICON_OPTION% smartpicker_v3.py
+          
+          pyinstaller --noconsole --onefile --clean --name "SmartPicker" --add-data "version.txt;." --hidden-import=pygame --hidden-import=win32com --hidden-import=win32com.client %ICON_OPTION% smartpicker_v3.py
+          
+          if %ERRORLEVEL% NEQ 0 (
+            echo ❌ PyInstaller打包失败
+            exit /b 1
+          )
+          
+          echo ✅ PyInstaller打包成功!
+
+      # 步骤6: 验证打包结果 (使用CMD语法)
       - name: 验证打包结果
-        shell: pwsh
+        shell: cmd
         run: |
-          Write-Host "验证打包结果..." -ForegroundColor Cyan
-          $exePath = "dist\SmartPicker_V3.exe"
+          @echo off
+          echo [步骤6] 验证打包结果...
           
-          if (Test-Path $exePath) {
-            $fileInfo = Get-Item $exePath
-            Write-Host "✅ 文件存在: $exePath" -ForegroundColor Green
-            Write-Host "📅 创建时间: $($fileInfo.CreationTime)" -ForegroundColor Gray
-            Write-Host "📏 文件大小: $([math]::Round($fileInfo.Length/1MB, 2)) MB" -ForegroundColor Gray
-            Write-Host "🆔 文件版本:" -ForegroundColor Gray
-            
-            # 尝试获取文件版本信息
-            try {
-              $versionInfo = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($exePath)
-              if ($versionInfo.FileVersion) {
-                Write-Host "   版本: $($versionInfo.FileVersion)" -ForegroundColor Cyan
-              }
-            } catch {
-              Write-Host "   无法获取版本信息" -ForegroundColor Yellow
-            }
-          } else {
-            Write-Host "❌ 打包文件不存在" -ForegroundColor Red
-          }
+          if not exist "dist\SmartPicker.exe" (
+            echo ❌ 错误: 未生成可执行文件
+            exit /b 1
+          )
           
-          # 显示 dist 目录内容
-          Write-Host "📁 dist 目录内容:" -ForegroundColor Cyan
-          Get-ChildItem -Path "dist" -Name
+          REM 获取文件大小
+          for %%F in ("dist\SmartPicker.exe") do set "SIZE=%%~zF"
+          set /a SIZE_MB=%SIZE%/1048576
+          
+          echo ✅ 打包文件: dist\SmartPicker.exe
+          echo 📦 文件大小: %SIZE_MB% MB
+          
+          REM 显示dist目录内容
+          echo 📁 dist目录内容:
+          dir /b dist
 
-      - name: 创建便携版 ZIP
-        shell: pwsh
+      # 步骤7: 创建便携版 (使用CMD语法)
+      - name: 创建便携版ZIP
+        shell: cmd
         run: |
-          Write-Host "创建便携版..." -ForegroundColor Cyan
+          @echo off
+          echo [步骤7] 创建便携版...
           
-          $version = "3.0.0"
-          $portableDir = "portable"
-          $zipName = "SmartPicker_V${version}_Portable.zip"
+          REM 创建便携版目录
+          if exist portable rd /s /q portable
+          md portable
           
-          # 清理并创建便携版目录
-          if (Test-Path $portableDir) {
-            Remove-Item -Path $portableDir -Recurse -Force
-          }
-          New-Item -ItemType Directory -Force -Path $portableDir | Out-Null
+          REM 复制文件到便携版目录
+          copy "dist\SmartPicker.exe" "portable\SmartPicker.exe"
+          copy "smartpicker_v3.py" "portable\源码_backup.py" 2>nul
           
-          # 复制必要文件
-          $filesToCopy = @{
-            "dist\SmartPicker_V3.exe" = "SmartPicker.exe"
-            "smartpicker_v3.py" = "源码_backup.py"
-            "名单.txt" = "名单.txt"
-            "黑名单.txt" = "黑名单.txt"
-          }
+          if exist "名单.txt" (
+            copy "名单.txt" "portable\名单.txt"
+            echo ✅ 复制: 名单.txt
+          ) else (
+            echo ℹ️  创建示例名单文件
+            echo 张三> portable\名单.txt
+            echo 李四>> portable\名单.txt
+            echo 王五>> portable\名单.txt
+          )
           
-          foreach ($src in $filesToCopy.Keys) {
-            $dst = $filesToCopy[$src]
-            if (Test-Path $src) {
-              Copy-Item -Path $src -Destination "$portableDir\$dst" -ErrorAction SilentlyContinue
-              Write-Host "✅ 复制: $dst" -ForegroundColor Green
-            } else {
-              Write-Host "⚠️  跳过: $src (文件不存在)" -ForegroundColor Yellow
-            }
-          }
+          if exist "黑名单.txt" (
+            copy "黑名单.txt" "portable\黑名单.txt"
+            echo ✅ 复制: 黑名单.txt
+          )
           
-          # 创建默认配置文件
-          $configContent = @"
-# SmartPicker V3.0 配置文件
-# 首次运行时会自动创建
-
-[GENERAL]
-version = 3.0.0
-language = zh_CN
-auto_check_update = true
-enable_logging = true
-log_level = INFO
-
-[UI]
-theme = light
-animation_speed = medium
-font_family = Microsoft YaHei
-enable_animations = true
-
-[PICKER]
-default_draw_count = 1
-max_draw_count = 20
-enable_blacklist = true
-voice_enabled = true
-voice_rate = 0
-voice_volume = 100
-
-[AUDIO]
-enable_sound = true
-rolling_sound_volume = 80
-victory_sound_volume = 100
-"@
+          REM 创建配置文件
+          (
+            echo # SmartPicker V3.0 配置文件
+            echo # 首次运行时会自动创建
+            echo.
+            echo [GENERAL]
+            echo version = 3.0.0
+            echo language = zh_CN
+            echo auto_check_update = true
+            echo enable_logging = true
+            echo log_level = INFO
+            echo.
+            echo [UI]
+            echo theme = light
+            echo animation_speed = medium
+            echo font_family = Microsoft YaHei
+            echo enable_animations = true
+            echo.
+            echo [PICKER]
+            echo default_draw_count = 1
+            echo max_draw_count = 20
+            echo enable_blacklist = true
+            echo voice_enabled = true
+            echo voice_rate = 0
+            echo voice_volume = 100
+            echo.
+            echo [AUDIO]
+            echo enable_sound = true
+            echo rolling_sound_volume = 80
+            echo victory_sound_volume = 100
+          ) > portable\config.ini
           
-          $configContent | Out-File -FilePath "$portableDir\config.ini" -Encoding UTF8
-          Write-Host "✅ 创建: config.ini" -ForegroundColor Green
+          echo ✅ 创建: config.ini
           
-          # 创建说明文件
-          $readmeContent = @"
-====================================
-SmartPicker V3.0 便携版
-====================================
-版本: $version
-系统要求: Windows 7 SP1 (64位)
-发布日期: $(Get-Date -Format "yyyy-MM-dd")
-
-包含文件:
-1. SmartPicker.exe     - 主程序（已打包）
-2. 名单.txt            - 学生名单（请编辑）
-3. 黑名单.txt          - 跳过名单（可选）
-4. config.ini          - 配置文件
-5. 源码_backup.py      - 源代码备份
-
-使用说明:
-1. 解压到任意文件夹
-2. 编辑 名单.txt 添加学生姓名（每行一个）
-3. 编辑 黑名单.txt 添加要跳过的人员（可选）
-4. 双击 SmartPicker.exe 运行
-5. 如需语音播报，请确保系统TTS可用
-
-主要功能:
-✓ 随机点名抽取
-✓ 语音播报结果
-✓ 黑名单管理
-✓ 动画效果
-✓ 抽取历史记录
-✓ 自动更新检查
-
-注意事项:
-- 无需安装 Python 环境
-- 首次运行会自动生成日志目录
-- 语音功能需要系统TTS支持
-- 支持双击标题栏输入密码 114514 查看黑名单
-
-故障排除:
-1. 如程序无法运行，请检查是否满足系统要求
-2. 如无声音，请检查系统音频设置
-3. 如需帮助，请访问项目主页
-
-项目地址: https://github.com/deng121200/Smart-Random-Picker
-====================================
-"@
+          REM 创建说明文件
+          (
+            echo ====================================
+            echo SmartPicker V3.0 便携版
+            echo ====================================
+            echo 版本: 3.0.0
+            echo 系统要求: Windows 7 SP1 (64位)
+            echo.
+            echo 包含文件:
+            echo 1. SmartPicker.exe     - 主程序
+            echo 2. 名单.txt            - 学生名单
+            echo 3. 黑名单.txt          - 跳过名单（可选）
+            echo 4. config.ini          - 配置文件
+            echo 5. 源码_backup.py      - 源代码备份
+            echo.
+            echo 使用说明:
+            echo 1. 解压到任意文件夹
+            echo 2. 编辑 名单.txt 添加学生姓名
+            echo 3. 双击 SmartPicker.exe 运行
+            echo.
+            echo 注意事项:
+            echo - 无需安装 Python
+            echo - 支持语音播报
+            echo - 双击标题栏输入密码 114514 查看黑名单
+            echo.
+            echo 项目地址: https://github.com/deng121200/Smart-Random-Picker
+            echo ====================================
+          ) > portable\README.txt
           
-          $readmeContent | Out-File -FilePath "$portableDir\README.txt" -Encoding UTF8
-          Write-Host "✅ 创建: README.txt" -ForegroundColor Green
+          echo ✅ 创建: README.txt
           
-          # 创建 ZIP 文件
-          Compress-Archive -Path "$portableDir\*" -DestinationPath $zipName -Force
-          Write-Host "✅ 便携版创建完成: $zipName" -ForegroundColor Green
+          REM 创建ZIP文件
+          powershell -Command "Compress-Archive -Path 'portable\*' -DestinationPath 'SmartPicker_V3.0.0_Portable.zip' -Force"
           
-          # 显示 ZIP 文件信息
-          $zipInfo = Get-Item $zipName
-          $zipSizeMB = [math]::Round($zipInfo.Length / 1MB, 2)
-          Write-Host "📦 ZIP 文件大小: $zipSizeMB MB" -ForegroundColor Cyan
+          if exist "SmartPicker_V3.0.0_Portable.zip" (
+            for %%F in ("SmartPicker_V3.0.0_Portable.zip") do set "ZIP_SIZE=%%~zF"
+            set /a ZIP_SIZE_MB=%ZIP_SIZE%/1048576
+            echo ✅ 便携版创建完成: SmartPicker_V3.0.0_Portable.zip
+            echo 📦 ZIP文件大小: %ZIP_SIZE_MB% MB
+          ) else (
+            echo ❌ ZIP文件创建失败
+          )
 
-      - name: 上传到 GitHub Releases
+      # 步骤8: 上传到GitHub Releases
+      - name: 上传到GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/SmartPicker_V3.exe
+            dist/SmartPicker.exe
             SmartPicker_V3.0.0_Portable.zip
             smartpicker_v3.py
           draft: false
           prerelease: false
           generate_release_notes: true
           body: |
-            # SmartPicker V3.0 发布说明
+            # SmartPicker V3.0 发布
             
-            ## 🎉 新版本亮点
-            
-            ### 🎤 语音播报功能
-            - 集成 Windows SAPI 离线 TTS
-            - 支持中文语音播报结果
-            - 可调节语速和音量
-            
-            ### 🎨 动画引擎升级
-            - 纯 Tkinter 实现，无 Pillow 依赖
-            - 颜色渐变动画、脉冲效果
-            - Win7 深度优化，性能稳定
-            
-            ### 🏗️ 架构重构
-            - MVC 清晰分离，代码易维护
-            - 配置文件驱动 (config.ini)
-            - 完整的日志系统
-            
-            ### 🛡️ 稳定性增强
-            - 全面的异常处理
-            - 智能编码检测 (utf-8/gbk)
-            - 自动备份恢复机制
+            ## 🚀 新特性
+            - 语音播报功能（离线TTS）
+            - 纯Tkinter动画引擎
+            - 配置文件系统
+            - Win7深度优化
             
             ## 📦 包含文件
-            
-            1. **SmartPicker_V3.exe** - 单文件可执行程序
+            1. **SmartPicker.exe** - 单文件可执行程序
             2. **SmartPicker_V3.0.0_Portable.zip** - 便携版（含配置文件）
             3. **smartpicker_v3.py** - 源代码
             
-            ## 🚀 系统要求
+            ## 🔧 使用说明
+            1. 下载便携版并解压
+            2. 编辑`名单.txt`添加学生姓名（每行一个）
+            3. 运行`SmartPicker.exe`
+            4. 如需语音，确保系统TTS可用
             
-            - Windows 7 SP1 或更高版本 (64位)
-            - 无需安装 Python
-            - 语音功能需要系统 TTS 支持
-            
-            ## 📖 使用说明
-            
-            1. 下载并解压便携版
-            2. 编辑 `名单.txt` 添加学生姓名（每行一个）
-            3. 运行 `SmartPicker.exe`
-            4. 如需语音播报，请确保系统语音功能正常
-            
-            ## 🔧 配置说明
-            
-            所有设置可在 `config.ini` 中调整：
-            - 动画速度、语音开关
-            - 抽取人数、黑名单启用
-            - 日志级别、自动更新
-            
-            ## 🐛 已知问题
-            
-            - 部分老版本 Windows 7 可能需手动安装 TTS 语言包
-            - 如遇运行问题，请检查日志文件
-            
-            ## ❓ 获取帮助
-            
-            问题反馈：https://github.com/deng121200/Smart-Random-Picker/issues
-            
-            ---
-            
-            *祝您使用愉快！灵感来源于 @遇屿迟*
+            ## 📖 配置说明
+            所有设置可在`config.ini`中调整
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # 步骤9: 清理临时文件
       - name: 清理临时文件
         if: always()
-        shell: pwsh
+        shell: cmd
         run: |
-          Write-Host "清理临时文件..." -ForegroundColor Cyan
-          $tempDirs = @("build", "__pycache__", "portable", "upx", "dist")
-          foreach ($dir in $tempDirs) {
-            if (Test-Path $dir) {
-              Remove-Item -Path $dir -Recurse -Force -ErrorAction SilentlyContinue
-              Write-Host "✅ 清理: $dir" -ForegroundColor Green
-            }
-          }
+          @echo off
+          echo [步骤9] 清理临时文件...
+          
+          REM 删除临时目录
+          if exist build rd /s /q build
+          if exist __pycache__ rd /s /q __pycache__
+          if exist portable rd /s /q portable
+          
+          echo ✅ 临时文件清理完成
