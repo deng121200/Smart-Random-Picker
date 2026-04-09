@@ -365,18 +365,14 @@ class VoiceManager:
         if not self.enabled or not self.speaker or not text:
             return
         
-        def _speak_internal():
-            try:
-                self.speaker.Speak(text, 1)  # 1 = 异步模式
-            except Exception as e:
-                self.log(f"语音播放失败: {e}", level="error")
-        
-        if async_mode:
-            # 在新线程中播放语音
-            thread = threading.Thread(target=_speak_internal, daemon=True)
-            thread.start()
-        else:
-            _speak_internal()
+        try:
+            # ✅ 核心修复：直接使用 SAPI 的异步标志，避免跨线程 COM 错误
+            # 1 = SVSFlagsAsync（异步），0 = SVSFDefault（同步）
+            flags = 1 if async_mode else 0
+            self.speaker.Speak(text, flags)
+        except Exception as e:
+            self.log(f"语音播放失败: {e}", level="error")
+
     
     def speak_winners(self, winners: List[str]):
         """播报抽取结果"""
