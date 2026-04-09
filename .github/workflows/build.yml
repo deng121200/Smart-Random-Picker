@@ -61,18 +61,15 @@ jobs:
           @echo off
           echo [步骤4] 检查必要文件...
           
-          if not exist "smartpicker_v3.py" (
-            echo ❌ 错误: 未找到 smartpicker_v3.py
+          REM 【修正点1】：文件名必须是 dianming.py
+          if not exist "dianming.py" (
+            echo ❌ 错误: 未找到 dianming.py
             echo 当前目录文件列表:
             dir /b
             exit /b 1
           )
           
-          echo ✅ 找到主程序: smartpicker_v3.py
-          
-          REM 创建版本文件
-          echo 3.0.0 > version.txt
-          echo ✅ 创建版本文件: version.txt
+          echo ✅ 找到主程序: dianming.py
 
       # 步骤5: 执行PyInstaller打包 (使用CMD语法)
       - name: 执行PyInstaller打包
@@ -90,10 +87,10 @@ jobs:
             echo ℹ️  未找到图标文件，使用默认图标
           )
           
-          REM 执行打包命令
-          echo 执行命令: pyinstaller --noconsole --onefile --clean --name "SmartPicker" --add-data "version.txt;." --hidden-import=pygame --hidden-import=win32com --hidden-import=win32com.client %ICON_OPTION% smartpicker_v3.py
+          REM 【修正点2】：去除了多余的 add-data，补全了 extracommod 隐式导入，目标文件设为 dianming.py
+          echo 执行命令: pyinstaller --noconsole --onefile --clean --name "SmartPicker" --hidden-import=pygame --hidden-import=win32com.extracommod --hidden-import=win32com.client %ICON_OPTION% dianming.py
           
-          pyinstaller --noconsole --onefile --clean --name "SmartPicker" --add-data "version.txt;." --hidden-import=pygame --hidden-import=win32com --hidden-import=win32com.client %ICON_OPTION% smartpicker_v3.py
+          pyinstaller --noconsole --onefile --clean --name "SmartPicker" --hidden-import=pygame --hidden-import=win32com.extracommod --hidden-import=win32com.client %ICON_OPTION% dianming.py
           
           if %ERRORLEVEL% NEQ 0 (
             echo ❌ PyInstaller打包失败
@@ -114,12 +111,10 @@ jobs:
             exit /b 1
           )
           
-          REM 获取文件大小
-          for %%F in ("dist\SmartPicker.exe") do set "SIZE=%%~zF"
-          set /a SIZE_MB=%SIZE%/1048576
+          REM 【修正点3】：安全输出文件大小，防止CMD算术运算溢出崩溃
+          for %%F in ("dist\SmartPicker.exe") do echo 📦 文件大小: %%~zF 字节
           
           echo ✅ 打包文件: dist\SmartPicker.exe
-          echo 📦 文件大小: %SIZE_MB% MB
           
           REM 显示dist目录内容
           echo 📁 dist目录内容:
@@ -138,7 +133,7 @@ jobs:
           
           REM 复制文件到便携版目录
           copy "dist\SmartPicker.exe" "portable\SmartPicker.exe"
-          copy "smartpicker_v3.py" "portable\源码_backup.py" 2>nul
+          copy "dianming.py" "portable\源码_backup.py" 2>nul
           
           if exist "名单.txt" (
             copy "名单.txt" "portable\名单.txt"
@@ -211,8 +206,8 @@ jobs:
             echo.
             echo 注意事项:
             echo - 无需安装 Python
-            echo - 支持语音播报
-            echo - 双击标题栏输入密码 114514 查看黑名单
+            echo - 支持离线语音播报
+            echo - 双击标题栏输入密码 114514 激活暗箱功能
             echo.
             echo 项目地址: https://github.com/deng121200/Smart-Random-Picker
             echo ====================================
@@ -224,10 +219,7 @@ jobs:
           powershell -Command "Compress-Archive -Path 'portable\*' -DestinationPath 'SmartPicker_V3.0.0_Portable.zip' -Force"
           
           if exist "SmartPicker_V3.0.0_Portable.zip" (
-            for %%F in ("SmartPicker_V3.0.0_Portable.zip") do set "ZIP_SIZE=%%~zF"
-            set /a ZIP_SIZE_MB=%ZIP_SIZE%/1048576
             echo ✅ 便携版创建完成: SmartPicker_V3.0.0_Portable.zip
-            echo 📦 ZIP文件大小: %ZIP_SIZE_MB% MB
           ) else (
             echo ❌ ZIP文件创建失败
           )
@@ -239,32 +231,27 @@ jobs:
           files: |
             dist/SmartPicker.exe
             SmartPicker_V3.0.0_Portable.zip
-            smartpicker_v3.py
+            dianming.py
           draft: false
           prerelease: false
           generate_release_notes: true
           body: |
-            # SmartPicker V3.0 发布
+            # SmartPicker V3.0 正式发布
             
             ## 🚀 新特性
-            - 语音播报功能（离线TTS）
-            - 纯Tkinter动画引擎
-            - 配置文件系统
-            - Win7深度优化
+            - **离线语音播报** (TTS本地生成，不依赖网络)
+            - **纯Tkinter动画引擎** (无第三方图像库，秒开)
+            - **动态配置系统** (自动生成 `config.ini`)
+            - **Win7深度兼容** (针对多媒体白板极致优化)
             
-            ## 📦 包含文件
-            1. **SmartPicker.exe** - 单文件可执行程序
-            2. **SmartPicker_V3.0.0_Portable.zip** - 便携版（含配置文件）
-            3. **smartpicker_v3.py** - 源代码
+            ## 📦 便携版 (推荐下载)
+            请直接下载下方的 **`SmartPicker_V3.0.0_Portable.zip`**
+            解压后即可获得主程序、配置文件、演示名单和项目源码。
             
             ## 🔧 使用说明
-            1. 下载便携版并解压
-            2. 编辑`名单.txt`添加学生姓名（每行一个）
-            3. 运行`SmartPicker.exe`
-            4. 如需语音，确保系统TTS可用
-            
-            ## 📖 配置说明
-            所有设置可在`config.ini`中调整
+            1. 编辑 `名单.txt` 添加学生姓名（每行一个）。
+            2. 运行 `SmartPicker.exe`，确保设备音量已开启。
+            3. 可在 `config.ini` 中调节动画速度、语速等高阶参数。
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -276,7 +263,6 @@ jobs:
           @echo off
           echo [步骤9] 清理临时文件...
           
-          REM 删除临时目录
           if exist build rd /s /q build
           if exist __pycache__ rd /s /q __pycache__
           if exist portable rd /s /q portable
