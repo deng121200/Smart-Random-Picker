@@ -292,31 +292,21 @@ class DataManager:
     
     def _encrypt_blacklist(self, blacklist: List[str]) -> Optional[bytes]:
         """
-        使用Windows DPAPI加密黑名单数据
-        返回：加密后的二进制数据，失败返回None
+        便携式混淆加密：支持跨电脑 U 盘流转，无视系统凭证限制
         """
         if not blacklist:
             return None
             
         try:
-            import win32crypt
-            
+            import base64
             # 将名单转换为JSON字符串
             data_str = json.dumps(blacklist, ensure_ascii=False)
-            data_bytes = data_str.encode('utf-8')
+            # 核心：Base64 编码后进行字符串倒置，防止学生直接用解码器破解
+            encoded = base64.b64encode(data_str.encode('utf-8'))
+            reversed_bytes = encoded[::-1]
             
-            # Windows DPAPI加密（仅当前用户可解密）
-            encrypted = win32crypt.CryptProtectData(
-                data_bytes,
-                "SmartPicker_Blacklist_V3",  # 数据描述
-                None,      # 可选熵（额外密钥）
-                None,      # 保留参数
-                None,      # 提示结构
-                0          # 标志：CRYPTPROTECT_UI_FORBIDDEN
-            )
-            
-            self.logger.info(f"黑名单加密成功，{len(blacklist)}条记录")
-            return encrypted
+            self.logger.info(f"黑名单便携式加密成功，{len(blacklist)}条记录")
+            return reversed_bytes
             
         except Exception as e:
             self.logger.error(f"黑名单加密失败: {e}")
@@ -324,30 +314,19 @@ class DataManager:
     
     def _decrypt_blacklist(self, encrypted_data: bytes) -> List[str]:
         """
-        使用Windows DPAPI解密黑名单数据
-        返回：解密后的名单列表，失败返回空列表
+        便携式解密：还原反转并解开 Base64
         """
         if not encrypted_data:
             return []
             
         try:
-            import win32crypt
-            
-            # Windows DPAPI解密
-            decrypted = win32crypt.CryptUnprotectData(
-                encrypted_data,
-                None,      # 数据描述（可选）
-                None,      # 可选熵
-                None,      # 保留参数
-                None,      # 提示结构
-                0          # 标志：CRYPTPROTECT_UI_FORBIDDEN
-            )
-            
-            # 解码JSON字符串
-            data_str = decrypted[1].decode('utf-8')
+            import base64
+            # 先将字节流反转回来，再进行 Base64 解码
+            decoded_bytes = base64.b64decode(encrypted_data[::-1])
+            data_str = decoded_bytes.decode('utf-8')
             blacklist = json.loads(data_str)
             
-            self.logger.info(f"黑名单解密成功，{len(blacklist)}条记录")
+            self.logger.info(f"黑名单便携式解密成功，{len(blacklist)}条记录")
             return blacklist
             
         except Exception as e:
@@ -357,9 +336,9 @@ class DataManager:
     def _get_blacklist_path(self) -> str:
         """
         获取加密黑名单文件路径
-        使用隐藏文件：.smartpicker_bl.dat
+        使用伪装文件名：system_config.dat（看起来像系统配置文件）
         """
-        return os.path.join(BASE_DIR, ".smartpicker_bl.dat")
+        return os.path.join(BASE_DIR, "system_config.dat")
     
     def load_encrypted_blacklist(self) -> List[str]:
         """
@@ -1426,7 +1405,7 @@ class SmartPickerApp:
             f"可抽取：{available_count} 人\n\n"
             f"【安全提示】\n"
             f"黑名单数据已加密存储\n"
-            f"文件：.smartpicker_bl.dat"
+            f"文件：system_config.dat"
         )
         
         messagebox.showinfo(
