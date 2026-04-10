@@ -248,18 +248,15 @@ class DataManager:
     
     def load_all_data(self) -> Tuple[List[str], List[str]]:
         """加载所有名单数据"""
-        # 加载主名单
+        # 加载主名单（保持不变）
         main_list_path = os.path.join(BASE_DIR, "名单.txt")
         names = self.safe_read_file(main_list_path)
         if names is None:
             self.logger.error("未找到 名单.txt 文件")
             names = []
         
-        # 加载黑名单
-        blacklist_path = os.path.join(BASE_DIR, "黑名单.txt")
-        blacklist = self.safe_read_file(blacklist_path)
-        if blacklist is None:
-            blacklist = []  # 黑名单文件不存在视为空
+        # 【V3.1核心修改】加载加密黑名单
+        blacklist = self.load_encrypted_blacklist()
         
         # 验证黑名单中的姓名是否存在于主名单
         valid_blacklist = []
@@ -288,6 +285,152 @@ class DataManager:
         except Exception as e:
             self.logger.error(f"保存历史记录失败: {e}")
 
+
+    # ==========================================
+    # 黑名单加密模块（Windows DPAPI）
+    # ==========================================
+    
+    def _encrypt_blacklist(self, blacklist: List[str]) -> Optional[bytes]:
+        """
+        使用Windows DPAPI加密黑名单数据
+        返回：加密后的二进制数据，失败返回None
+        """
+        if not blacklist:
+            return None
+            
+        try:
+            import win32crypt
+            
+            # 将名单转换为JSON字符串
+            data_str = json.dumps(blacklist, ensure_ascii=False)
+            data_bytes = data_str.encode('utf-8')
+            
+            # Windows DPAPI加密（仅当前用户可解密）
+            encrypted = win32crypt.CryptProtectData(
+                data_bytes,
+                "SmartPicker_Blacklist_V3",  # 数据描述
+                None,      # 可选熵（额外密钥）
+                None,      # 保留参数
+                None,      # 提示结构
+                0          # 标志：CRYPTPROTECT_UI_FORBIDDEN
+            )
+            
+            self.logger.info(f"黑名单加密成功，{len(blacklist)}条记录")
+            return encrypted
+            
+        except Exception as e:
+            self.logger.error(f"黑名单加密失败: {e}")
+            return None
+    
+    def _decrypt_blacklist(self, encrypted_data: bytes) -> List[str]:
+        """
+        使用Windows DPAPI解密黑名单数据
+        返回：解密后的名单列表，失败返回空列表
+        """
+        if not encrypted_data:
+            return []
+            
+        try:
+            import win32crypt
+            
+            # Windows DPAPI解密
+            decrypted = win32crypt.CryptUnprotectData(
+                encrypted_data,
+                None,      # 数据描述（可选）
+                None,      # 可选熵
+                None,      # 保留参数
+                None,      # 提示结构
+                0          # 标志：CRYPTPROTECT_UI_FORBIDDEN
+            )
+            
+            # 解码JSON字符串
+            data_str = decrypted[1].decode('utf-8')
+            blacklist = json.loads(data_str)
+            
+            self.logger.info(f"黑名单解密成功，{len(blacklist)}条记录")
+            return blacklist
+            
+        except Exception as e:
+            self.logger.error(f"黑名单解密失败: {e}")
+            return []
+    
+    def _get_blacklist_path(self) -> str:
+        """
+        获取加密黑名单文件路径
+        使用隐藏文件：.smartpicker_bl.dat
+        """
+        return os.path.join(BASE_DIR, ".smartpicker_bl.dat")
+    
+    def load_encrypted_blacklist(self) -> List[str]:
+        """
+        加载加密的黑名单
+        优先级：1.加密文件 2.明文文件（迁移）3.空列表
+        """
+        encrypted_path = self._get_blacklist_path()
+        legacy_path = os.path.join(BASE_DIR, "黑名单.txt")
+        
+        # 1. 检查加密文件是否存在
+        if os.path.exists(encrypted_path):
+            try:
+                with open(encrypted_path, 'rb') as f:
+                    encrypted_data = f.read()
+                
+                if encrypted_data:
+                    return self._decrypt_blacklist(encrypted_data)
+                    
+            except Exception as e:
+                self.logger.error(f"读取加密黑名单文件失败: {e}")
+                # 继续尝试明文文件
+        
+        # 2. 检查明文文件（向后兼容）
+        if os.path.exists(legacy_path):
+            self.logger.warning("发现明文黑名单文件，将自动迁移到加密格式")
+            plain_blacklist = self.safe_read_file(legacy_path) or []
+            
+            # 加密并保存
+            encrypted_data = self._encrypt_blacklist(plain_blacklist)
+            if encrypted_data:
+                try:
+                    with open(encrypted_path, 'wb') as f:
+                        f.write(encrypted_data)
+                    self.logger.info("黑名单已迁移到加密格式")
+                    
+                    # 删除明文文件（安全擦除）
+                    try:
+                        os.remove(legacy_path)
+                        self.logger.info("明文黑名单文件已删除")
+                    except:
+                        pass
+                        
+                except Exception as e:
+                    self.logger.error(f"保存加密黑名单失败: {e}")
+            
+            return plain_blacklist
+        
+        # 3. 无黑名单文件
+        return []
+    
+    def save_encrypted_blacklist(self, blacklist: List[str]) -> bool:
+        """
+        保存加密的黑名单
+        返回：成功True，失败False
+        """
+        try:
+            encrypted_data = self._encrypt_blacklist(blacklist)
+            if encrypted_data is None:
+                return False
+            
+            encrypted_path = self._get_blacklist_path()
+            
+            with open(encrypted_path, 'wb') as f:
+                f.write(encrypted_data)
+            
+            self.logger.info(f"黑名单已加密保存: {encrypted_path}")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"保存加密黑名单失败: {e}")
+            return False
 # ==========================================
 # 语音管理器
 # ==========================================
@@ -896,15 +1039,401 @@ class SmartPickerApp:
         )
         
         if pwd == "114514":
-            self.load_data()
-            messagebox.showinfo(
-                "成功",
-                f"已就绪！\n已读取 {len(self.blacklist)} 人。",
-                parent=self.root
-            )
+            # 【V3.1修改】提供管理选项而非直接显示人数
+            self._show_admin_menu()
         elif pwd is not None:
             messagebox.showerror("错误", "密码错误！", parent=self.root)
     
+    # ==========================================
+    # 黑名单管理模块（Gemini修正版）
+    # ==========================================
+    
+    def manage_blacklist(self):
+        """黑名单管理界面"""
+        if not hasattr(self, 'blacklist_manager_open') or not self.blacklist_manager_open:
+            self._create_blacklist_manager()
+    
+    def _create_blacklist_manager(self):
+        """创建黑名单管理窗口"""
+        self.blacklist_manager_open = True
+        
+        # 创建顶层窗口
+        manager_win = tk.Toplevel(self.root)
+        manager_win.title("黑名单管理 - SmartPicker V3.1")
+        manager_win.geometry("500x600")
+        manager_win.resizable(False, False)
+        manager_win.configure(bg="#f5f5f5")
+        
+        # 设置窗口图标和任务栏
+        try:
+            manager_win.iconbitmap(default="icon.ico")
+        except:
+            pass
+        
+        # 窗口关闭事件处理
+        def on_closing():
+            self.blacklist_manager_open = False
+            manager_win.destroy()
+        
+        manager_win.protocol("WM_DELETE_WINDOW", on_closing)
+        
+        # 标题
+        title_frame = tk.Frame(manager_win, bg="#2196f3", height=60)
+        title_frame.pack(fill=tk.X)
+        title_frame.pack_propagate(False)
+        
+        tk.Label(
+            title_frame,
+            text="🔒 黑名单管理",
+            font=("Microsoft YaHei", 18, "bold"),
+            fg="white",
+            bg="#2196f3"
+        ).pack(expand=True)
+        
+        # 统计信息
+        info_frame = tk.Frame(manager_win, bg="#e3f2fd", height=40)
+        info_frame.pack(fill=tk.X, pady=(10, 0))
+        info_frame.pack_propagate(False)
+        
+        total_count = len(self.names)
+        blacklist_count = len(self.blacklist)
+        available_count = total_count - blacklist_count
+        
+        info_text = f"总人数: {total_count} | 黑名单: {blacklist_count} | 可抽取: {available_count}"
+        tk.Label(
+            info_frame,
+            text=info_text,
+            font=("Microsoft YaHei", 11),
+            fg="#1565c0",
+            bg="#e3f2fd"
+        ).pack(expand=True)
+        
+        # 名单显示区域
+        list_frame = tk.Frame(manager_win, bg="white")
+        list_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=15)
+        
+        # 滚动条
+        scrollbar = tk.Scrollbar(list_frame)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # 列表框
+        self.blacklist_listbox = tk.Listbox(
+            list_frame,
+            font=("Microsoft YaHei", 12),
+            selectmode=tk.SINGLE,
+            yscrollcommand=scrollbar.set,
+            height=15
+        )
+        self.blacklist_listbox.pack(fill=tk.BOTH, expand=True)
+        
+        scrollbar.config(command=self.blacklist_listbox.yview)
+        
+        # 刷新名单显示
+        self._refresh_blacklist_display()
+        
+        # 操作按钮区域
+        button_frame = tk.Frame(manager_win, bg="#f5f5f5")
+        button_frame.pack(fill=tk.X, padx=20, pady=(0, 15))
+        
+        # 添加按钮
+        add_btn = tk.Button(
+            button_frame,
+            text="➕ 添加黑名单",
+            font=("Microsoft YaHei", 11),
+            bg="#4caf50",
+            fg="white",
+            activebackground="#388e3c",
+            activeforeground="white",
+            relief=tk.FLAT,
+            cursor="hand2",
+            command=self._add_to_blacklist
+        )
+        add_btn.pack(side=tk.LEFT, padx=(0, 10))
+        
+        # 移除按钮
+        remove_btn = tk.Button(
+            button_frame,
+            text="➖ 移除黑名单",
+            font=("Microsoft YaHei", 11),
+            bg="#ff9800",
+            fg="white",
+            activebackground="#f57c00",
+            activeforeground="white",
+            relief=tk.FLAT,
+            cursor="hand2",
+            command=self._remove_from_blacklist
+        )
+        remove_btn.pack(side=tk.LEFT, padx=(0, 10))
+        
+        # 清空按钮
+        clear_btn = tk.Button(
+            button_frame,
+            text="🗑️ 清空黑名单",
+            font=("Microsoft YaHei", 11),
+            bg="#f44336",
+            fg="white",
+            activebackground="#d32f2f",
+            activeforeground="white",
+            relief=tk.FLAT,
+            cursor="hand2",
+            command=self._clear_blacklist
+        )
+        clear_btn.pack(side=tk.LEFT, padx=(0, 10))
+        
+        # 保存按钮
+        save_btn = tk.Button(
+            button_frame,
+            text="💾 保存更改",
+            font=("Microsoft YaHei", 11, "bold"),
+            bg="#2196f3",
+            fg="white",
+            activebackground="#1976d2",
+            activeforeground="white",
+            relief=tk.FLAT,
+            cursor="hand2",
+            command=self._save_blacklist_changes
+        )
+        save_btn.pack(side=tk.RIGHT)
+        
+        # 状态标签
+        self.blacklist_status = tk.Label(
+            manager_win,
+            text="就绪",
+            font=("Microsoft YaHei", 10),
+            fg="#666666",
+            bg="#f5f5f5"
+        )
+        self.blacklist_status.pack(fill=tk.X, padx=20, pady=(0, 10))
+    
+    def _refresh_blacklist_display(self):
+        """刷新黑名单列表框显示"""
+        if hasattr(self, 'blacklist_listbox'):
+            self.blacklist_listbox.delete(0, tk.END)
+            
+            if not self.blacklist:
+                self.blacklist_listbox.insert(tk.END, "（黑名单为空）")
+                self.blacklist_listbox.itemconfig(0, fg="#999999")
+            else:
+                for i, name in enumerate(self.blacklist, 1):
+                    self.blacklist_listbox.insert(tk.END, f"{i:2d}. {name}")
+    
+    def _add_to_blacklist(self):
+        """添加学生到黑名单"""
+        # 获取不在黑名单中的学生列表
+        available_names = [n for n in self.names if n not in self.blacklist]
+        
+        if not available_names:
+            messagebox.showinfo("提示", "所有学生已在黑名单中", parent=self.root)
+            return
+        
+        # 创建选择窗口
+        select_win = tk.Toplevel(self.root)
+        select_win.title("选择学生")
+        select_win.geometry("300x400")
+        select_win.resizable(False, False)
+        
+        # 滚动条
+        scrollbar = tk.Scrollbar(select_win)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # 列表框（多选）
+        listbox = tk.Listbox(
+            select_win,
+            font=("Microsoft YaHei", 11),
+            selectmode=tk.MULTIPLE,
+            yscrollcommand=scrollbar.set,
+            height=15
+        )
+        listbox.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        scrollbar.config(command=listbox.yview)
+        
+        # 填充名单
+        for name in available_names:
+            listbox.insert(tk.END, name)
+        
+        # 确认按钮
+        def confirm_selection():
+            selections = listbox.curselection()
+            if not selections:
+                messagebox.showwarning("警告", "请选择至少一名学生", parent=select_win)
+                return
+            
+            selected_names = [available_names[i] for i in selections]
+            
+            # 添加到黑名单
+            for name in selected_names:
+                if name not in self.blacklist:
+                    self.blacklist.append(name)
+            
+            self._refresh_blacklist_display()
+            self._update_status(f"已添加 {len(selected_names)} 名学生到黑名单")
+            select_win.destroy()
+        
+        tk.Button(
+            select_win,
+            text="确认添加",
+            font=("Microsoft YaHei", 11, "bold"),
+            bg="#4caf50",
+            fg="white",
+            command=confirm_selection
+        ).pack(pady=(0, 10))
+    
+    def _remove_from_blacklist(self):
+        """从黑名单中移除学生"""
+        if not self.blacklist:
+            messagebox.showinfo("提示", "黑名单为空", parent=self.root)
+            return
+        
+        selection = self.blacklist_listbox.curselection()
+        if not selection:
+            messagebox.showwarning("警告", "请选择要移除的学生", parent=self.root)
+            return
+        
+        # 获取选中的姓名（跳过"（黑名单为空）"）
+        if self.blacklist_listbox.get(selection[0]) == "（黑名单为空）":
+            return
+        
+        index = selection[0]
+        name = self.blacklist[index]
+        
+        # 确认移除
+        if messagebox.askyesno("确认", f"确定要从黑名单中移除「{name}」吗？", parent=self.root):
+            self.blacklist.pop(index)
+            self._refresh_blacklist_display()
+            self._update_status(f"已从黑名单移除: {name}")
+    
+    def _clear_blacklist(self):
+        """清空黑名单"""
+        if not self.blacklist:
+            return
+        
+        if messagebox.askyesno("确认清空", "确定要清空整个黑名单吗？", parent=self.root):
+            self.blacklist.clear()
+            self._refresh_blacklist_display()
+            self._update_status("黑名单已清空")
+    
+    def _save_blacklist_changes(self):
+        """保存黑名单更改到加密文件（Gemini修正版）"""
+        try:
+            success = self.data_manager.save_encrypted_blacklist(self.blacklist)
+            if success:
+                self._update_status("✅ 黑名单已加密保存", "#4caf50")
+                # 【Gemini修复】：移除幻觉组件，改用标准弹窗反馈并重载主界面数据
+                messagebox.showinfo("保存成功", "黑名单数据已加密并安全保存！", parent=self.root)
+                self.load_data() 
+            else:
+                self._update_status("❌ 保存失败，请检查日志", "#f44336")
+                messagebox.showerror("保存失败", "加密存储失败，请检查系统权限。", parent=self.root)
+        except Exception as e:
+            self._update_status(f"❌ 保存失败: {str(e)[:30]}", "#f44336")
+            self.data_manager.logger.error(f"保存黑名单失败: {e}")
+    
+    def _update_status(self, message: str, color: str = "#666666"):
+        """更新状态标签"""
+        if hasattr(self, 'blacklist_status'):
+            self.blacklist_status.config(text=message, fg=color)
+    
+    def _show_admin_menu(self):
+        """显示管理员菜单（替换原来的直接显示人数）"""
+        # 创建菜单窗口
+        admin_win = tk.Toplevel(self.root)
+        admin_win.title("SmartPicker 管理员菜单")
+        admin_win.geometry("350x250")
+        admin_win.resizable(False, False)
+        admin_win.configure(bg="#f5f5f5")
+        
+        # 标题
+        tk.Label(
+            admin_win,
+            text="🔐 管理员菜单",
+            font=("Microsoft YaHei", 18, "bold"),
+            fg="#2196f3",
+            bg="#f5f5f5"
+        ).pack(pady=(20, 10))
+        
+        # 版本信息
+        tk.Label(
+            admin_win,
+            text=f"SmartPicker V3.1\n加密黑名单系统",
+            font=("Microsoft YaHei", 10),
+            fg="#666666",
+            bg="#f5f5f5"
+        ).pack(pady=(0, 20))
+        
+        # 操作按钮
+        btn_frame = tk.Frame(admin_win, bg="#f5f5f5")
+        btn_frame.pack(pady=10)
+        
+        # 黑名单管理按钮
+        blacklist_btn = tk.Button(
+            btn_frame,
+            text="📋 管理黑名单",
+            font=("Microsoft YaHei", 12, "bold"),
+            width=20,
+            height=2,
+            bg="#2196f3",
+            fg="white",
+            activebackground="#1976d2",
+            activeforeground="white",
+            relief=tk.FLAT,
+            cursor="hand2",
+            command=lambda: [admin_win.destroy(), self.manage_blacklist()]
+        )
+        blacklist_btn.pack(pady=5)
+        
+        # 系统信息按钮
+        info_btn = tk.Button(
+            btn_frame,
+            text="ℹ️ 系统信息",
+            font=("Microsoft YaHei", 12),
+            width=20,
+            height=2,
+            bg="#4caf50",
+            fg="white",
+            activebackground="#388e3c",
+            activeforeground="white",
+            relief=tk.FLAT,
+            cursor="hand2",
+            command=lambda: [admin_win.destroy(), self._show_system_info()]
+        )
+        info_btn.pack(pady=5)
+        
+        # 关闭按钮
+        close_btn = tk.Button(
+            btn_frame,
+            text="关闭",
+            font=("Microsoft YaHei", 10),
+            width=15,
+            bg="#757575",
+            fg="white",
+            relief=tk.FLAT,
+            cursor="hand2",
+            command=admin_win.destroy
+        )
+        close_btn.pack(pady=10)
+    
+    def _show_system_info(self):
+        """显示系统信息（替代原来的直接显示黑名单人数）"""
+        total_count = len(self.names)
+        blacklist_count = len(self.blacklist)
+        available_count = total_count - blacklist_count
+        
+        info_text = (
+            f"系统状态：正常\n\n"
+            f"总人数：{total_count} 人\n"
+            f"黑名单：{blacklist_count} 人\n"
+            f"可抽取：{available_count} 人\n\n"
+            f"【安全提示】\n"
+            f"黑名单数据已加密存储\n"
+            f"文件：.smartpicker_bl.dat"
+        )
+        
+        messagebox.showinfo(
+            "系统信息",
+            info_text,
+            parent=self.root
+        )
     def toggle_voice(self):
         """切换语音开关"""
         current_state = self.voice_manager.enabled
