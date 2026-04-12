@@ -1067,32 +1067,138 @@ class SmartPickerApp:
             )
     
     def check_for_updates(self):
-        """检查更新（性能优化版）"""
+        """检查更新（OTA 热更新版）"""
         update_url = f"https://raw.githubusercontent.com/{self.github_user}/{self.github_repo}/main/version.txt"
-        release_url = f"https://github.com/{self.github_user}/{self.github_repo}/releases"
         
         try:
             req = urllib.request.Request(
                 update_url,
-                headers={'User-Agent': 'SmartPicker/3.0 (Windows 7 Compatible)'}
+                headers={'User-Agent': 'SmartPicker/3.3 (Windows 7 Compatible)'}
             )
             with urllib.request.urlopen(req, timeout=10) as response:
                 content = response.read().decode('utf-8').strip()
                 remote_version = content.split('\n')[-1].strip()
                 
                 if remote_version != self.current_version:
-                    self.root.after(0, lambda: self._show_update_dialog(remote_version, release_url))
-        except Exception:
-            pass
+                    current_exe_name = os.path.basename(sys.executable) if getattr(sys, 'frozen', False) else "SmartPicker.exe"
+                    download_url = f"https://github.com/{self.github_user}/{self.github_repo}/releases/latest/download/{current_exe_name}"
+                    
+                    self.root.after(0, lambda: self._show_update_dialog(remote_version, download_url))
+        except Exception as e:
+            if self.config.get_bool('GENERAL', 'enable_logging', False):
+                self.data_manager.logger.error(f"更新检测失败: {e}")
     
-    def _show_update_dialog(self, remote_version: str, release_url: str):
-        """【性能优化】在主线程中显示更新对话框"""
+    def _show_update_dialog(self, remote_version: str, download_url: str):
+        """显示更新对话框并触发热更新"""
         if messagebox.askyesno(
-            "更新提示",
-            f"发现新版本 v{remote_version}！\n是否前往下载？",
+            "发现新版本",
+            f"系统检测到新版本 v{remote_version}！\n是否立即进行自动热更新？\n\n(更新过程中程序会自动重启)",
             parent=self.root
         ):
-            webbrowser.open(release_url)
+            self._perform_auto_update(download_url)
+    
+    def _perform_auto_update(self, download_url: str):
+        """执行金蝉脱壳接力更新（多模型融合完美版）"""
+        if not getattr(sys, 'frozen', False):
+            messagebox.showinfo("提示", "当前处于源码运行模式，请前往 GitHub 手动拉取代码。")
+            webbrowser.open(f"https://github.com/{self.github_user}/{self.github_repo}/releases/latest")
+            return
+        
+        current_exe_path = sys.executable
+        exe_dir = os.path.dirname(current_exe_path)
+        new_exe_path = current_exe_path + ".new"
+        bat_path = os.path.join(exe_dir, "update.bat")
+        backup_exe_path = current_exe_path + ".backup"
+        
+        # 1. 禁用 UI，初始化进度显示
+        self.btn.config(state=tk.DISABLED)
+        self.name_display.config(text="准备下载更新...", fg="#ff9800", font=("Microsoft YaHei", 30, "bold"))
+        self.root.update()
+        
+        try:
+            # 2. 发起下载请求并校验
+            req = urllib.request.Request(download_url, headers={'User-Agent': 'SmartPicker-Updater'})
+            with urllib.request.urlopen(req, timeout=30) as response:
+                if response.status != 200:
+                    raise Exception(f"服务器响应异常 (HTTP {response.status})")
+                
+                content_length = int(response.headers.get('Content-Length', 0))
+                downloaded = 0
+                
+                # 3. 分块下载与 Tkinter UI 刷新
+                with open(new_exe_path, 'wb') as out_file:
+                    while True:
+                        chunk = response.read(8192)
+                        if not chunk:
+                            break
+                        out_file.write(chunk)
+                        downloaded += len(chunk)
+                        
+                        if content_length > 0:
+                            progress = int((downloaded / content_length) * 100)
+                            self.name_display.config(text=f"正在下载更新... {progress}%")
+                            self.root.update()
+            
+            # 4. 下载完整性校验
+            if os.path.getsize(new_exe_path) < 10240:  # 小于 10KB 绝对是错误页面
+                raise Exception("下载文件体积异常，可能被网络拦截。")
+            
+            # 5. 生成备份文件
+            if os.path.exists(current_exe_path):
+                import shutil
+                shutil.copy2(current_exe_path, backup_exe_path)
+            
+            # 6. 生成容灾 BAT 脚本（Gemini 修复：坚决剔除 chcp 65001，纯正 mbcs）
+            bat_content = f"""@echo off
+title SmartPicker 自动更新程序
+echo 正在等待主程序退出以释放文件锁...
+ping 127.0.0.1 -n 3 > nul
+echo 正在应用更新...
+
+if exist "{current_exe_path}" (
+    del /f /q "{current_exe_path}"
+)
+
+if exist "{new_exe_path}" (
+    move /y "{new_exe_path}" "{current_exe_path}" > nul
+    if errorlevel 1 (
+        echo [错误] 替换新版本失败！
+        if exist "{backup_exe_path}" (
+            echo 正在尝试回滚旧版本...
+            copy /y "{backup_exe_path}" "{current_exe_path}" > nul
+        )
+        pause
+        exit /b 1
+    )
+) else (
+    echo [错误] 未找到下载的更新文件！
+    pause
+    exit /b 1
+)
+
+if exist "{backup_exe_path}" del /f /q "{backup_exe_path}"
+echo 更新完成！正在重启程序...
+start "" "{current_exe_path}"
+del "%~f0"
+"""
+            # 使用 mbcs 强制写入 ANSI，确保 Win7 CMD 中文完美显示
+            with open(bat_path, "w", encoding="mbcs") as f:
+                f.write(bat_content)
+            
+            # 7. 移交控制权并完全脱钩自毁
+            # 抛弃 subprocess，使用 Windows 原生 API 彻底分离进程
+            os.startfile(bat_path)
+            self._on_closing()
+            sys.exit()
+            
+        except Exception as e:
+            # 清理残局，恢复 UI
+            if os.path.exists(new_exe_path):
+                os.remove(new_exe_path)
+            self.name_display.config(text="已就绪", fg="#0056b3", font=("Microsoft YaHei", 55, "bold"))
+            self.btn.config(state=tk.NORMAL)
+            messagebox.showerror("更新失败", f"自动更新失败，请检查网络。\n\n详情: {e}", parent=self.root)
+            self.load_data()
     
     def open_secret_menu(self, event):
         """打开密码菜单"""
