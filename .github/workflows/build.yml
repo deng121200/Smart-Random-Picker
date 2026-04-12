@@ -1,4 +1,4 @@
-name: SmartPicker V3.0 自动打包 (终极严谨版)
+name: SmartPicker V3.3 自动打包 (终极严谨版)
 
 on:
   push:
@@ -50,7 +50,7 @@ jobs:
           @echo off
           echo [步骤5] 开始打包...
           
-          REM 【吸收R1修复方案】：展开为单行命令，彻底消灭 ^ 续行符带来的解析断层
+          REM 展开为单行命令，彻底消灭 ^ 续行符带来的解析断层，补全 extracommod
           if exist "icon.ico" (
             echo 发现自定义图标，使用图标打包...
             pyinstaller --noconsole --onefile --clean --name "SmartPicker" --icon=icon.ico --hidden-import=pygame --hidden-import=win32com --hidden-import=win32com.client --hidden-import=win32com.extracommod dianming.py
@@ -89,13 +89,13 @@ jobs:
             echo 王五>> portable\名单.txt
           )
           
-          if exist "黑名单.txt" copy "黑名单.txt" "portable\黑名单.txt" >nul
+          REM V3.3取消明文黑名单，不再强行生成 黑名单.txt
           
-          REM 保留了完整的 config.ini 模板
+          REM 生成匹配 V3.3 版本的配置文件
           (
-            echo # SmartPicker V3.0 配置文件
+            echo # SmartPicker V3.3 配置文件
             echo [GENERAL]
-            echo version = 3.0.0
+            echo version = 3.3.0
             echo language = zh_CN
             echo auto_check_update = true
             echo enable_logging = true
@@ -121,74 +121,48 @@ jobs:
             echo victory_sound_volume = 100
           ) > portable\config.ini
           
-          REM 保留了面向小白的 README 说明书
+          REM 生成匹配 V3.3 版本的说明书
           (
             echo ====================================
-            echo SmartPicker V3.0 便携版
+            echo SmartPicker V3.3 便携版
             echo ====================================
-            echo 版本: 3.0.0
+            echo 版本: 3.3.0
             echo 系统要求: Windows 7 SP1 (64位)
             echo.
             echo 包含文件:
             echo 1. SmartPicker.exe     - 主程序
             echo 2. 名单.txt            - 学生名单
-            echo 3. 黑名单.txt          - 跳过名单（可选）
-            echo 4. config.ini          - 配置文件
-            echo 5. 源码_backup.py      - 源代码备份
+            echo 3. config.ini          - 配置文件
+            echo 4. 源码_backup.py      - 源代码备份
             echo.
             echo 使用说明:
             echo 1. 解压到任意文件夹
             echo 2. 编辑 名单.txt 添加学生姓名
             echo 3. 双击 SmartPicker.exe 运行
             echo.
-            echo 注意事项:
-            echo - 无需安装 Python
-            echo - 支持语音播报
-            echo - 双击标题栏输入密码 114514 激活暗箱功能
+            echo 极客进阶：暗箱管理
+            echo - 无需手动修改黑名单文件！
+            echo - 在软件主界面双击顶部大标题“课堂随机点名”
+            echo - 输入密码 114514 即可进入图形化管理后台
+            echo - 黑名单数据将安全加密存储，支持U盘热插拔漫游
             echo.
             echo 项目地址: https://github.com/deng121200/Smart-Random-Picker
             echo ====================================
           ) > portable\README.txt
           
-          powershell -Command "Compress-Archive -Path 'portable\*' -DestinationPath 'SmartPicker_V3.0.0_Portable.zip' -Force"
+          powershell -Command "Compress-Archive -Path 'portable\*' -DestinationPath 'SmartPicker_V3.3.0_Portable.zip' -Force"
 
       - name: 上传到GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
           files: |
             dist/SmartPicker.exe
-            SmartPicker_V3.0.0_Portable.zip
+            SmartPicker_V3.3.0_Portable.zip
             dianming.py
           draft: false
           prerelease: false
           generate_release_notes: true
           body: |
-            # 🎉 SmartPicker V3.0 正式发布
+            # 🎉 SmartPicker V3.3.0 正式发布 (性能重构与极致暗箱版)
             
-            ## 版本亮点
-            - **离线语音播报** - Windows SAPI TTS本地合成
-            - **纯Tkinter动画** - 无Pillow依赖，极速启动
-            - **配置文件系统** - 所有参数可调
-            - **Win7深度优化** - 多媒体白板专用
-            
-            ## 📦 下载推荐
-            **普通用户**：下载 `SmartPicker_V3.0.0_Portable.zip`（便携版，开箱即用）
-            **高级用户**：下载 `SmartPicker.exe`（单文件版）
-            **开发者**：下载 `dianming.py`（源码）
-            
-            ## 🚀 使用说明
-            1. 解压便携版到任意目录
-            2. 编辑 `名单.txt` 添加学生姓名（每行一个）
-            3. 运行 `SmartPicker.exe`
-            4. 双击标题栏输入 `114514` 可激活暗箱
-            
-            ## 🔧 配置调整
-            所有设置可在 `config.ini` 中调整：
-            - 动画速度、语音开关
-            - 抽取人数、黑名单启用
-            - 音量大小、日志级别
-            
-            ## ❓ 获取帮助
-            问题反馈：[GitHub Issues](https://github.com/deng121200/Smart-Random-Picker/issues)
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            SmartPicker
