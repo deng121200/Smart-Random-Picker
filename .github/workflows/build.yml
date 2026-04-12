@@ -1,4 +1,4 @@
-name: SmartPicker V3.3 自动打包 (终极严谨版)
+name: SmartPicker 自动打包 (OTA 热更新版)
 
 on:
   push:
@@ -15,6 +15,18 @@ jobs:
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
+
+      - name: 🧬 解析动态版本号 (Gemini 修复版)
+        id: get_version
+        shell: bash
+        run: |
+          # 直接获取触发 Actions 的 Tag 名称 (如 v3.4.0)
+          TAG_NAME="${{ github.ref_name }}"
+          # 优雅剥离字母 v，提取纯数字版本号 (3.4.0)
+          VERSION="${TAG_NAME#v}"
+          VERSION="${VERSION#V}"
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "✅ 成功提取纯净版本号: $VERSION"
 
       - name: 设置Python 3.8环境
         uses: actions/setup-python@v5
@@ -50,7 +62,6 @@ jobs:
           @echo off
           echo [步骤5] 开始打包...
           
-          REM 展开为单行命令，彻底消灭 ^ 续行符带来的解析断层，补全 extracommod
           if exist "icon.ico" (
             echo 发现自定义图标，使用图标打包...
             pyinstaller --noconsole --onefile --clean --name "SmartPicker" --icon=icon.ico --hidden-import=pygame --hidden-import=win32com --hidden-import=win32com.client --hidden-import=win32com.extracommod dianming.py
@@ -89,13 +100,11 @@ jobs:
             echo 王五>> portable\名单.txt
           )
           
-          REM V3.3取消明文黑名单，不再强行生成 黑名单.txt
-          
-          REM 生成匹配 V3.3 版本的配置文件
+          REM 动态生成配置文件，注入 ${{ env.VERSION }}
           (
-            echo # SmartPicker V3.3 配置文件
+            echo # SmartPicker V${{ env.VERSION }} 配置文件
             echo [GENERAL]
-            echo version = 3.3.0
+            echo version = ${{ env.VERSION }}
             echo language = zh_CN
             echo auto_check_update = true
             echo enable_logging = true
@@ -121,12 +130,12 @@ jobs:
             echo victory_sound_volume = 100
           ) > portable\config.ini
           
-          REM 生成匹配 V3.3 版本的说明书
+          REM 动态生成说明书
           (
             echo ====================================
-            echo SmartPicker V3.3 便携版
+            echo SmartPicker V${{ env.VERSION }} 便携版
             echo ====================================
-            echo 版本: 3.3.0
+            echo 版本: ${{ env.VERSION }}
             echo 系统要求: Windows 7 SP1 (64位)
             echo.
             echo 包含文件:
@@ -135,34 +144,43 @@ jobs:
             echo 3. config.ini          - 配置文件
             echo 4. 源码_backup.py      - 源代码备份
             echo.
-            echo 使用说明:
-            echo 1. 解压到任意文件夹
-            echo 2. 编辑 名单.txt 添加学生姓名
-            echo 3. 双击 SmartPicker.exe 运行
+            echo 🚀 OTA自动进化引擎就绪
+            echo 软件现已支持静默热更新，发现新版本后点击同意即可一键无感升级！
             echo.
             echo 极客进阶：暗箱管理
-            echo - 无需手动修改黑名单文件！
             echo - 在软件主界面双击顶部大标题“课堂随机点名”
             echo - 输入密码 114514 即可进入图形化管理后台
-            echo - 黑名单数据将安全加密存储，支持U盘热插拔漫游
+            echo - 黑名单数据隐蔽加密存储，支持U盘热插拔漫游
             echo.
             echo 项目地址: https://github.com/deng121200/Smart-Random-Picker
             echo ====================================
           ) > portable\README.txt
           
-          powershell -Command "Compress-Archive -Path 'portable\*' -DestinationPath 'SmartPicker_V3.3.0_Portable.zip' -Force"
+          REM 动态命名 ZIP 压缩包
+          powershell -Command "Compress-Archive -Path 'portable\*' -DestinationPath 'SmartPicker_V${{ env.VERSION }}_Portable.zip' -Force"
 
       - name: 上传到GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
           files: |
             dist/SmartPicker.exe
-            SmartPicker_V3.3.0_Portable.zip
+            SmartPicker_V${{ env.VERSION }}_Portable.zip
             dianming.py
           draft: false
           prerelease: false
           generate_release_notes: true
           body: |
-            # 🎉 SmartPicker V3.3.0 正式发布 (性能重构与极致暗箱版)
+            # 🎉 SmartPicker V${{ env.VERSION }} 正式发布 (OTA 自动进化版)
             
-            SmartPicker
+            SmartPicker V${{ env.VERSION }} 是一次具有里程碑意义的架构升级！正式引入了**“法医级” OTA 自动热更新引擎**。从此告别繁琐的手动下载与覆盖，点名器具备了一键无感升级的生命力。
+            
+            ### ✨ 核心升级亮点
+            * **🔄 工业级 OTA 热更新**：底层引入原生 `os.startfile` 与动态生成的纯 ANSI 脚本，完美绕过 Windows 文件锁限制，实现主程序的静默自杀与安全覆盖。
+            * **🚀 实时进度不假死**：采用分块流式读取与 UI 强制刷新技术。下载更新包时，主界面保持流畅的百分比跳动。
+            * **🛡️ 法医级容灾回滚**：内置全链路防御机制（状态码拦截、文件防劫持校验、自动生成备份文件）。一旦发生异常，系统将自动回滚至旧版本。
+            * **🔒 绝对暗箱机制保留**：继承了极客加密逻辑，完美支持 U 盘热插拔漫游。
+            
+            ### 📦 下载推荐
+            请直接下载下方的 **`SmartPicker_V${{ env.VERSION }}_Portable.zip`**（便携版）。解压后无需安装环境，双击即可运行。
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
