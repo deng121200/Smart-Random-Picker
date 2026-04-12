@@ -1,9 +1,9 @@
 # Smart-Random-Picker (课堂智能随机点名系统)
 
-![Version](https://img.shields.io/badge/Version-v3.4.0-blue.svg)
+[![Version](https://img.shields.io/badge/Version-v3.4.0-blue.svg)](https://github.com/deng121200/Smart-Random-Picker/releases/latest)
 ![Platform](https://img.shields.io/badge/Platform-Windows_7%2B-lightgrey.svg)
-![Python](https://img.shields.io/badge/Python-3.8.10-green.svg)
-![License](https://img.shields.io/badge/License-MIT-orange.svg)
+[![Python](https://img.shields.io/badge/Python-3.8.10-green.svg)](https://www.python.org/downloads/release/python-3810/)
+[![License](https://img.shields.io/badge/License-MIT-orange.svg)](https://opensource.org/licenses/MIT)
 
 **SmartPicker** 是一款专为教育教学环境（尤其是老旧多媒体教学白板）量身打造的极简、极速、极安全的课堂随机点名工具。
 
@@ -36,7 +36,7 @@
 
 ### 1. 下载与准备
 本项目为纯净便携版，**无需安装 Python 及任何环境**。
-1. 前往 Releases 页面下载最新的 **`SmartPicker_V3.4.0_Portable.zip`**。
+1. 前往 [Releases 页面](https://github.com/deng121200/Smart-Random-Picker/releases/latest) 下载最新的 **`SmartPicker_V3.4.0_Portable.zip`**。
 2. 将压缩包解压到你的电脑或 **U 盘**的任意文件夹中。
 
 ### 2. 配置名单
@@ -48,7 +48,7 @@
 * 双击运行 `SmartPicker.exe`。
 * 拖动滑块选择需要抽取的人数（1~20人）。
 * 点击“开始”按钮；点击“停止”揭晓最终结果，并触发语音播报。
-* *注：当 GitHub 有新版本发布时，软件会自动弹出升级提示，一键即可无感热更新。*
+* *注：当 [GitHub 主页](https://github.com/deng121200/Smart-Random-Picker) 有新版本发布时，软件会自动弹出升级提示，一键即可无感热更新。*
 
 ---
 
@@ -85,6 +85,6 @@
 
 ## 📄 版权与致谢
 
-* **Author**: @遇屿迟
+* **Author**: [@遇屿迟](https://github.com/deng121200)
 * **Acknowledgments**: 感谢在架构重构与法医级排错中提供深度推演的多模型 AI 协同开发阵列 (Gemini 3.1 Pro x DeepSeek R1 x GLM 4.7)。
-* **License**: 本项目遵循 MIT 开源协议。允许自由使用、修改及分发。
+* **License**: 本项目遵循 [MIT 开源协议](https://opensource.org/licenses/MIT)。允许自由使用、修改及分发。
