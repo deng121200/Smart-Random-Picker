@@ -88,11 +88,12 @@ class ConfigManager:
         self.config_path = os.path.join(BASE_DIR, "config.ini")
         self.default_config = {
             'GENERAL': {
-                'version': '3.4.0',
+                'version': '3.5.0',
                 'language': 'zh_CN',
                 'auto_check_update': 'true',
                 'enable_logging': 'true',
-                'log_level': 'INFO'
+                'log_level': 'INFO',
+                'skipped_version': ''  # <--- 新增这行
             },
             'UI': {
                 'theme': 'light',
@@ -769,7 +770,7 @@ class SmartPickerApp:
         self.voice_manager = VoiceManager()
         self.animation_engine = AnimationEngine(root)
         
-        self.current_version = "3.4.0"
+        self.current_version = "3.5.0"
         self.github_user = "deng121200"
         self.github_repo = "Smart-Random-Picker"
         
@@ -1065,37 +1066,136 @@ class SmartPickerApp:
                 f"无法自动打开浏览器，请手动复制网址访问：\n\n{feedback_url}",
                 parent=self.root
             )
-    
-    def check_for_updates(self):
-        """检查更新（OTA 热更新版）"""
-        update_url = f"https://raw.githubusercontent.com/{self.github_user}/{self.github_repo}/main/version.txt"
+    def check_for_updates(self, manual=False):
+        """检查更新（GitHub API 抓取日志版 + Lambda闭包修复）"""
+        api_url = f"https://api.github.com/repos/{self.github_user}/{self.github_repo}/releases/latest"
         
         try:
             req = urllib.request.Request(
-                update_url,
-                headers={'User-Agent': 'SmartPicker/3.3 (Windows 7 Compatible)'}
+                api_url,
+                headers={
+                    'User-Agent': 'SmartPicker-Updater/4.0',
+                    'Accept': 'application/vnd.github.v3+json'
+                }
             )
             with urllib.request.urlopen(req, timeout=10) as response:
-                content = response.read().decode('utf-8').strip()
-                remote_version = content.split('\n')[-1].strip()
+                data = json.loads(response.read().decode('utf-8'))
                 
-                if remote_version != self.current_version:
+                # 从 API 响应中提取纯净版本号和更新日志
+                remote_version = data.get('tag_name', '').lstrip('vV')
+                release_notes = data.get('body', '开发者未提供更新日志。')
+                
+                if remote_version and remote_version != self.current_version:
+                    # 检查是否被用户设置为"跳过此版本"
+                    skipped_version = self.config.get('GENERAL', 'skipped_version', '')
+                    if remote_version == skipped_version and not manual:
+                        return  # 如果是自动检查，且该版本被跳过，则静默退出
+                    
                     current_exe_name = os.path.basename(sys.executable) if getattr(sys, 'frozen', False) else "SmartPicker.exe"
                     download_url = f"https://github.com/{self.github_user}/{self.github_repo}/releases/latest/download/{current_exe_name}"
                     
-                    self.root.after(0, lambda: self._show_update_dialog(remote_version, download_url))
+                    # 吸收 GLM 修复：使用默认参数捕获变量，锁死作用域
+                    self.root.after(0, lambda url=download_url, rv=remote_version, rn=release_notes: self._show_custom_update_dialog(rv, rn, url))
+                elif manual:
+                    self.root.after(0, lambda: messagebox.showinfo("检查更新", f"当前已经是最新版本 (v{self.current_version})！\n\n您正在使用的是最前沿的极客构建版。", parent=self.root))
+                    
         except Exception as e:
-            if self.config.get_bool('GENERAL', 'enable_logging', False):
-                self.data_manager.logger.error(f"更新检测失败: {e}")
-    
-    def _show_update_dialog(self, remote_version: str, download_url: str):
-        """显示更新对话框并触发热更新"""
-        if messagebox.askyesno(
-            "发现新版本",
-            f"系统检测到新版本 v{remote_version}！\n是否立即进行自动热更新？\n\n(更新过程中程序会自动重启)",
-            parent=self.root
-        ):
+            error_msg = f"无法连接到 GitHub 服务器检查更新。\n\n请检查网络连接或稍后重试。\n错误详情: {e}"
+            if manual:
+                self.root.after(0, lambda msg=error_msg: messagebox.showerror("更新失败", msg, parent=self.root))
+            elif self.config.get_bool('GENERAL', 'enable_logging', False):
+                print(f"[错误] API 更新检测失败: {e}")
+
+    def _show_custom_update_dialog(self, remote_version: str, release_notes: str, download_url: str):
+        """显示自定义更新对话框（含更新日志与跳过功能）"""
+        dialog = tk.Toplevel(self.root)
+        dialog.title("发现新版本！")
+        dialog.geometry("550x450")
+        dialog.resizable(False, False)
+        dialog.configure(bg="#f5f5f5")
+        dialog.transient(self.root)  # 保持在主窗口之上
+        dialog.grab_set()  # 拦截对主窗口的其他操作
+        
+        try:
+            dialog.iconbitmap(default="icon.ico")
+        except:
+            pass
+            
+        # 顶部标题栏
+        tk.Label(
+            dialog,
+            text=f"🚀 发现新版本 v{remote_version}",
+            font=("Microsoft YaHei", 18, "bold"),
+            bg="#f5f5f5", fg="#2196f3"
+        ).pack(pady=(20, 5))
+        
+        tk.Label(
+            dialog,
+            text=f"当前版本: v{self.current_version}  →  最新版本: v{remote_version}",
+            font=("Microsoft YaHei", 10),
+            bg="#f5f5f5", fg="#666666"
+        ).pack(pady=(0, 15))
+        
+        # 中间的更新日志展示区
+        log_frame = tk.Frame(dialog, bg="#ffffff", bd=1, relief=tk.SOLID)
+        log_frame.pack(fill=tk.BOTH, expand=True, padx=25, pady=5)
+        
+        scrollbar = tk.Scrollbar(log_frame)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        text_widget = tk.Text(
+            log_frame,
+            font=("Microsoft YaHei", 10),
+            wrap=tk.WORD,
+            yscrollcommand=scrollbar.set,
+            bg="#f9f9f9",
+            padx=15, pady=15
+        )
+        text_widget.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.config(command=text_widget.yview)
+        
+        # 插入日志并设置为只读
+        text_widget.insert(tk.END, "【更新日志 Release Notes】\n" + "="*40 + "\n\n" + release_notes)
+        text_widget.config(state=tk.DISABLED)
+        
+        # 底部按钮区
+        btn_frame = tk.Frame(dialog, bg="#f5f5f5")
+        btn_frame.pack(fill=tk.X, padx=25, pady=20)
+        
+        def do_update():
+            dialog.destroy()
             self._perform_auto_update(download_url)
+            
+        def skip_version():
+            self.config.set('GENERAL', 'skipped_version', remote_version)
+            dialog.destroy()
+            
+        def remind_later():
+            dialog.destroy()
+            
+        # 立即更新按钮
+        update_btn = tk.Button(
+            btn_frame, text="立即更新 (推荐)", font=("Microsoft YaHei", 11, "bold"),
+            bg="#4caf50", fg="white", activebackground="#388e3c", cursor="hand2",
+            relief=tk.FLAT, command=do_update, width=15
+        )
+        update_btn.pack(side=tk.RIGHT, padx=(10, 0))
+        
+        # 跳过版本按钮
+        skip_btn = tk.Button(
+            btn_frame, text="跳过此版本", font=("Microsoft YaHei", 10),
+            bg="#e0e0e0", fg="#333333", activebackground="#bdbdbd", cursor="hand2",
+            relief=tk.FLAT, command=skip_version, width=12
+        )
+        skip_btn.pack(side=tk.LEFT)
+        
+        # 以后再说按钮
+        cancel_btn = tk.Button(
+            btn_frame, text="以后再说", font=("Microsoft YaHei", 10),
+            bg="#ffffff", fg="#333333", activebackground="#f0f0f0", cursor="hand2",
+            relief=tk.FLAT, command=remind_later, width=10
+        )
+        cancel_btn.pack(side=tk.RIGHT)
     
     def _perform_auto_update(self, download_url: str):
         """执行金蝉脱壳接力更新（多模型融合完美版）"""
@@ -1476,10 +1576,10 @@ del "%~f0"
             self.blacklist_status.config(text=message, fg=color)
     
     def _show_admin_menu(self):
-        """显示管理员菜单"""
+        """显示管理员菜单（V3.4 全新版）"""
         admin_win = tk.Toplevel(self.root)
         admin_win.title("SmartPicker 管理员菜单")
-        admin_win.geometry("350x250")
+        admin_win.geometry("350x420") # 增加高度容纳新按钮
         admin_win.resizable(False, False)
         admin_win.configure(bg="#f5f5f5")
         
@@ -1489,64 +1589,128 @@ del "%~f0"
             font=("Microsoft YaHei", 18, "bold"),
             fg="#2196f3",
             bg="#f5f5f5"
-        ).pack(pady=(20, 10))
+        ).pack(pady=(20, 5))
         
         tk.Label(
             admin_win,
-            text=f"SmartPicker V3.1\n加密黑名单系统",
+            text=f"当前运行版本: v{self.current_version}\n加密暗箱与 OTA 引擎已就绪",
             font=("Microsoft YaHei", 10),
             fg="#666666",
             bg="#f5f5f5"
-        ).pack(pady=(0, 20))
+        ).pack(pady=(0, 15))
         
         btn_frame = tk.Frame(admin_win, bg="#f5f5f5")
-        btn_frame.pack(pady=10)
+        btn_frame.pack(pady=5)
         
-        blacklist_btn = tk.Button(
-            btn_frame,
-            text="📋 管理黑名单",
-            font=("Microsoft YaHei", 12, "bold"),
-            width=20,
-            height=2,
-            bg="#2196f3",
-            fg="white",
-            activebackground="#1976d2",
-            activeforeground="white",
-            relief=tk.FLAT,
-            cursor="hand2",
+        # 1. 黑名单管理
+        tk.Button(
+            btn_frame, text="📋 管理黑名单", font=("Microsoft YaHei", 11, "bold"),
+            width=22, height=1, bg="#2196f3", fg="white",
+            activebackground="#1976d2", relief=tk.FLAT, cursor="hand2",
             command=lambda: [admin_win.destroy(), self.manage_blacklist()]
-        )
-        blacklist_btn.pack(pady=5)
+        ).pack(pady=6)
         
-        info_btn = tk.Button(
-            btn_frame,
-            text="ℹ️ 系统信息",
-            font=("Microsoft YaHei", 12),
-            width=20,
-            height=2,
-            bg="#4caf50",
-            fg="white",
-            activebackground="#388e3c",
-            activeforeground="white",
-            relief=tk.FLAT,
-            cursor="hand2",
+        # 2. 手动检查更新 (直接调用带有 manual=True 的新引擎，放入异步线程防卡顿)
+        tk.Button(
+            btn_frame, text="🔄 手动检查更新", font=("Microsoft YaHei", 11, "bold"),
+            width=22, height=1, bg="#ff9800", fg="white",
+            activebackground="#f57c00", relief=tk.FLAT, cursor="hand2",
+            command=lambda: [admin_win.destroy(), threading.Thread(target=self.check_for_updates, kwargs={'manual': True}, daemon=True).start()]
+        ).pack(pady=6)
+        
+        # 3. 查看更新历史
+        tk.Button(
+            btn_frame, text="📜 查看云端更新历史", font=("Microsoft YaHei", 11, "bold"),
+            width=22, height=1, bg="#9c27b0", fg="white",
+            activebackground="#7b1fa2", relief=tk.FLAT, cursor="hand2",
+            command=lambda: [admin_win.destroy(), threading.Thread(target=self._show_update_history, daemon=True).start()]
+        ).pack(pady=6)
+        
+        # 4. 系统信息
+        tk.Button(
+            btn_frame, text="ℹ️ 系统信息", font=("Microsoft YaHei", 11),
+            width=22, height=1, bg="#4caf50", fg="white",
+            activebackground="#388e3c", relief=tk.FLAT, cursor="hand2",
             command=lambda: [admin_win.destroy(), self._show_system_info()]
-        )
-        info_btn.pack(pady=5)
+        ).pack(pady=6)
         
-        close_btn = tk.Button(
-            btn_frame,
-            text="关闭",
-            font=("Microsoft YaHei", 10),
-            width=15,
-            bg="#757575",
-            fg="white",
-            relief=tk.FLAT,
-            cursor="hand2",
+        # 关闭按钮
+        tk.Button(
+            btn_frame, text="关闭面板", font=("Microsoft YaHei", 10),
+            width=15, bg="#e0e0e0", fg="#333",
+            activebackground="#bdbdbd", relief=tk.FLAT, cursor="hand2",
             command=admin_win.destroy
+        ).pack(pady=15)
+
+    def _show_update_history(self):
+        """拉取并显示 GitHub 的全量更新历史"""
+        api_url = f"https://api.github.com/repos/{self.github_user}/{self.github_repo}/releases"
+        
+        try:
+            req = urllib.request.Request(
+                api_url,
+                headers={
+                    'User-Agent': 'SmartPicker-History/4.0',
+                    'Accept': 'application/vnd.github.v3+json'
+                }
+            )
+            with urllib.request.urlopen(req, timeout=10) as response:
+                releases = json.loads(response.read().decode('utf-8'))
+                
+                # 提取格式化的历史记录
+                history_text = ""
+                for release in releases[:10]: # 只取最近 10 个版本，防止文本过长
+                    tag = release.get('tag_name', 'Unknown')
+                    date = release.get('published_at', '').split('T')[0]
+                    body = release.get('body', '无详细日志')
+                    history_text += f"🚀 版本: {tag} ({date})\n{'-'*45}\n{body}\n\n"
+                    
+                if not history_text:
+                    history_text = "暂无云端更新历史记录。"
+                
+                # 绘制历史记录 UI (需回到主线程渲染)
+                self.root.after(0, lambda text=history_text: self._render_history_window(text))
+                
+        except Exception as e:
+            error_msg = f"无法连接到 GitHub 获取历史记录。\n\n错误详情: {e}"
+            self.root.after(0, lambda msg=error_msg: messagebox.showerror("获取失败", msg, parent=self.root))
+
+    def _render_history_window(self, history_text: str):
+        """渲染历史记录专属窗口"""
+        hist_win = tk.Toplevel(self.root)
+        hist_win.title("云端更新历史")
+        hist_win.geometry("600x500")
+        hist_win.resizable(True, True)
+        hist_win.configure(bg="#f5f5f5")
+        hist_win.transient(self.root)
+        
+        try:
+            hist_win.iconbitmap(default="icon.ico")
+        except:
+            pass
+            
+        tk.Label(
+            hist_win, text="📚 SmartPicker 版本迭代史", 
+            font=("Microsoft YaHei", 16, "bold"), bg="#f5f5f5", fg="#333"
+        ).pack(pady=15)
+        
+        text_frame = tk.Frame(hist_win, bg="#ffffff", bd=1, relief=tk.SOLID)
+        text_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=(0, 20))
+        
+        scrollbar = tk.Scrollbar(text_frame)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        text_widget = tk.Text(
+            text_frame, font=("Microsoft YaHei", 10), wrap=tk.WORD,
+            yscrollcommand=scrollbar.set, bg="#f9f9f9", padx=15, pady=15
         )
-        close_btn.pack(pady=10)
+        text_widget.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.config(command=text_widget.yview)
+        
+        text_widget.insert(tk.END, history_text)
+        text_widget.config(state=tk.DISABLED)
     
+
     def _show_system_info(self):
         """显示系统信息"""
         total_count = len(self.names)
