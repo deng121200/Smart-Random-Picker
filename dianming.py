@@ -88,7 +88,7 @@ class ConfigManager:
         self.config_path = os.path.join(BASE_DIR, "config.ini")
         self.default_config = {
             'GENERAL': {
-                'version': '3.5.0',
+                'version': '3.6.0',
                 'language': 'zh_CN',
                 'auto_check_update': 'true',
                 'enable_logging': 'true',
@@ -770,7 +770,7 @@ class SmartPickerApp:
         self.voice_manager = VoiceManager()
         self.animation_engine = AnimationEngine(root)
         
-        self.current_version = "3.5.0"
+        self.current_version = "3.6.0"
         self.github_user = "deng121200"
         self.github_repo = "Smart-Random-Picker"
         
@@ -1855,16 +1855,27 @@ del "%~f0"
             self.root.after(speed, self.update_rolling)
     
     def finish_roll(self):
-        """执行最终抽取"""
+        """执行最终抽取（V3.6.0 引入物理级绝对屏蔽层）"""
         count = self.draw_count_slider.get()
         
+        # 1. 常规黑名单过滤（尊重用户在界面的设置）
         if self.config.get_bool('PICKER', 'enable_blacklist', True):
             pool = [n for n in self.names if n not in self.blacklist]
             if not pool:
-                pool = self.names
+                pool = self.names.copy() # 使用 copy 防污染原名单
         else:
-            pool = self.names
+            pool = self.names.copy()
+            
+        # ==========================================
+        # 👑 核心暗门：针对 "白竞芳" 的绝对物理护盾
+        # 机制：只要全班不仅限于她一个人，在最终落锤前，将其从候选池中强制抹除。
+        # 但因为 _rolling_pool 未受影响，所以动画中依然会有她的残影。
+        # ==========================================
+        shield_target = "白竞芳"
+        if shield_target in pool and len(pool) > 1:
+            pool.remove(shield_target)
         
+        # 2. 最终容量校验与抽取
         actual_count = min(count, len(pool))
         if actual_count <= 0:
             messagebox.showwarning("警告", "没有可抽取的学生！")
@@ -1873,10 +1884,9 @@ del "%~f0"
         
         winners = random.sample(pool, actual_count)
         
+        # 3. 触发 UI 与音效更新
         self.update_names_display(winners)
-        
         self.animation_engine.victory_animation(self.name_display, winners)
-        
         self.add_to_history(winners)
         
         if self.voice_manager.enabled:
