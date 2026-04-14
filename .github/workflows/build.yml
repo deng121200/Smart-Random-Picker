@@ -163,24 +163,4 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/SmartPicker.exe
-            SmartPicker_V${{ env.VERSION }}_Portable.zip
-            dianming.py
-          draft: false
-          prerelease: false
-          generate_release_notes: true
-          body: |
-            # 🎉 SmartPicker V${{ env.VERSION }} 正式发布 (OTA 自动进化版)
-            
-            SmartPicker V${{ env.VERSION }} 是一次具有里程碑意义的架构升级！正式引入了**“法医级” OTA 自动热更新引擎**。从此告别繁琐的手动下载与覆盖，点名器具备了一键无感升级的生命力。
-            
-            ### ✨ 核心升级亮点
-            * **🔄 工业级 OTA 热更新**：底层引入原生 `os.startfile` 与动态生成的纯 ANSI 脚本，完美绕过 Windows 文件锁限制，实现主程序的静默自杀与安全覆盖。
-            * **🚀 实时进度不假死**：采用分块流式读取与 UI 强制刷新技术。下载更新包时，主界面保持流畅的百分比跳动。
-            * **🛡️ 法医级容灾回滚**：内置全链路防御机制（状态码拦截、文件防劫持校验、自动生成备份文件）。一旦发生异常，系统将自动回滚至旧版本。
-            * **🔒 绝对暗箱机制保留**：继承了极客加密逻辑，完美支持 U 盘热插拔漫游。
-            
-            ### 📦 下载推荐
-            请直接下载下方的 **`SmartPicker_V${{ env.VERSION }}_Portable.zip`**（便携版）。解压后无需安装环境，双击即可运行。
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          
