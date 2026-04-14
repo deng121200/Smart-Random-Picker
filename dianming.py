@@ -27,7 +27,7 @@ import urllib.request
 import json
 import configparser
 from datetime import datetime
-from typing import List, Optional, Tuple, Dict
+from typing import List, Optional, Tuple, Dict, Callable
 
 # ==========================================
 # 可选依赖导入（优雅降级设计）
@@ -66,6 +66,51 @@ try:
     ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(MY_APP_ID)
 except (AttributeError, OSError):
     pass  # 非Windows环境或旧版Windows静默忽略
+# ==========================================
+# ==========================================
+# V3.7.0 异步安全守护引擎（防止跨线程闪退）
+# ==========================================
+def safe_after_call(root, delay_ms: int, func: Callable, *args, **kwargs):
+    """
+    安全的异步回调调度器（法医级生命体征探测）
+    
+    【核心机制】在后台线程通过 after() 调度 UI 更新前，先探测 Tkinter 主窗口是否存活。
+    如果用户在回调执行前关闭了主窗口，此函数会拦截崩溃，避免 Fatal Error 闪退。
+    
+    参数:
+        root: Tkinter 根窗口或 Toplevel 实例
+        delay_ms: 延迟执行毫秒数（0表示立即调度）
+        func: 要执行的回调函数
+        *args, **kwargs: 传递给回调函数的参数
+    
+    返回:
+        after_id: Tkinter after() 返回的定时器ID（可用于取消）
+    """
+    def safe_wrapper():
+        """安全包装器：执行前进行法医级生命体征探测"""
+        try:
+            # 第一步：探测窗口生命体征
+            if not root.winfo_exists():
+                print(f"[安全拦截] 窗口已销毁，取消异步回调: {func.__name__ if hasattr(func, '__name__') else 'anonymous'}")
+                return  # 静默退出，不触发任何崩溃
+            
+            # 第二步：执行原始回调
+            func(*args, **kwargs)
+            
+        except tk.TclError as e:
+            # Tkinter 底层异常：窗口可能在我们检查后的一瞬间被销毁
+            if "invalid command name" in str(e) or "application has been destroyed" in str(e):
+                print(f"[安全拦截] TclError 异常捕获，窗口已销毁: {e}")
+                return  # 静默吞掉异常
+            else:
+                raise  # 重新抛出其他 Tkinter 异常
+        except Exception as e:
+            # 其他异常（回调函数自身错误）正常抛出，便于调试
+            print(f"[回调错误] 异步执行时发生异常: {e}")
+            raise
+    
+    # 调度安全包装器到 Tkinter 主循环
+    return root.after(delay_ms, safe_wrapper)
 
 # ==========================================
 # 配置管理器（单例模式 + 性能优化版）
@@ -261,6 +306,8 @@ class DataManager:
         
         # 【性能优化】历史记录大小限制
         self._max_history_size = 1000
+        # 🆕 V3.7.0 自适应权重文件路径
+        self.weights_path = os.path.join(BASE_DIR, "weights.json")
     
     def _get_logger(self):
         """获取日志记录器（简化版）"""
@@ -475,6 +522,67 @@ class DataManager:
         except Exception as e:
             self.logger.error(f"保存加密黑名单失败: {e}")
             return False
+    def load_weights(self, names: List[str]) -> Dict[str, float]:
+        """
+        加载权重数据，若文件不存在则初始化所有人为100.0
+        
+        参数:
+            names: 当前名单中的所有姓名列表
+            
+        返回:
+            Dict[str, float]: 姓名->权重的映射字典
+        """
+        weights = {}
+        
+        try:
+            if os.path.exists(self.weights_path):
+                with open(self.weights_path, 'r', encoding='utf-8') as f:
+                    saved_weights = json.load(f)
+                
+                # 同步当前名单：保留已有权重，新增人员默认100.0
+                for name in names:
+                    weights[name] = saved_weights.get(name, 100.0)
+                
+                self.logger.info(f"已加载权重文件，共 {len(weights)} 条记录")
+            else:
+                # 首次使用，所有人员初始权重100.0
+                for name in names:
+                    weights[name] = 100.0
+                self.logger.info(f"权重文件不存在，已初始化 {len(names)} 条新记录")
+                
+        except Exception as e:
+            self.logger.error(f"权重文件加载失败，使用默认权重: {e}")
+            # 降级策略：全部使用默认值
+            for name in names:
+                weights[name] = 100.0
+                
+        return weights
+
+    def save_weights(self, weights: Dict[str, float]):
+        """
+        异步原子化保存权重数据（使用 .tmp 临时文件防止写入中断）
+        
+        参数:
+            weights: 姓名->权重的完整字典
+        """
+        try:
+            temp_path = self.weights_path + '.tmp'
+            
+            # 1. 写入临时文件
+            with open(temp_path, 'w', encoding='utf-8') as f:
+                json.dump(weights, f, ensure_ascii=False, indent=2)
+            
+            # 2. 原子化替换（Windows 兼容）
+            if os.path.exists(self.weights_path):
+                os.replace(temp_path, self.weights_path)
+            else:
+                os.rename(temp_path, self.weights_path)
+                
+            self.logger.info(f"权重文件已保存，共 {len(weights)} 条记录")
+            
+        except Exception as e:
+            self.logger.error(f"权重文件保存失败: {e}")
+            # 静默失败，不影响主流程
 
 # ==========================================
 # 语音管理器
@@ -913,20 +1021,6 @@ class SmartPickerApp:
         )
         self.refresh_btn.grid(row=0, column=2, padx=10)
         
-        self.feedback_btn = tk.Button(
-            self.control_frame,
-            text="🐛 反馈建议",
-            font=("Microsoft YaHei", 12, "bold"),
-            bg="#ff9800",
-            fg="white",
-            command=self.open_feedback_page,
-            width=10,
-            relief="flat",
-            cursor="hand2",
-            activebackground="#f57c00"
-        )
-        self.feedback_btn.grid(row=0, column=3, padx=10)
-        
         self.voice_toggle_btn = tk.Button(
             self.control_frame,
             text="🔊 语音" if self.voice_manager.enabled else "🔇 静音",
@@ -939,7 +1033,7 @@ class SmartPickerApp:
             cursor="hand2",
             activebackground="#7b1fa2"
         )
-        self.voice_toggle_btn.grid(row=0, column=4, padx=10)
+        self.voice_toggle_btn.grid(row=0, column=3, padx=10)
         
         self.bottom_frame = tk.Frame(self.root, bg="#f0f4f8")
         self.bottom_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=20, pady=20)
@@ -1015,6 +1109,8 @@ class SmartPickerApp:
         """加载名单数据"""
         try:
             self.names, self.blacklist = self.data_manager.load_all_data()
+            # 🆕 V3.7.0 核心：加载动态权重数据
+            self.weights = self.data_manager.load_weights(self.names)
             total_count = len(self.names)
             
             if not self.names or total_count == 0:
@@ -1095,14 +1191,17 @@ class SmartPickerApp:
                     download_url = f"https://github.com/{self.github_user}/{self.github_repo}/releases/latest/download/{current_exe_name}"
                     
                     # 吸收 GLM 修复：使用默认参数捕获变量，锁死作用域
-                    self.root.after(0, lambda url=download_url, rv=remote_version, rn=release_notes: self._show_custom_update_dialog(rv, rn, url))
+                    # 🚀 V3.7.0 安全升级：替换为 safe_after_call
+                    safe_after_call(self.root, 0, lambda url=download_url, rv=remote_version, rn=release_notes: self._show_custom_update_dialog(rv, rn, url))
                 elif manual:
-                    self.root.after(0, lambda: messagebox.showinfo("检查更新", f"当前已经是最新版本 (v{self.current_version})！\n\n您正在使用的是最前沿的极客构建版。", parent=self.root))
+                    # 🚀 V3.7.0 安全升级：替换为 safe_after_call
+                    safe_after_call(self.root, 0, lambda: messagebox.showinfo("检查更新", f"当前已经是最新版本 (v{self.current_version})！\n\n您正在使用的是最前沿的极客构建版。", parent=self.root))
                     
         except Exception as e:
             error_msg = f"无法连接到 GitHub 服务器检查更新。\n\n请检查网络连接或稍后重试。\n错误详情: {e}"
             if manual:
-                self.root.after(0, lambda msg=error_msg: messagebox.showerror("更新失败", msg, parent=self.root))
+                # 🚀 V3.7.0 安全升级：替换为 safe_after_call
+                safe_after_call(self.root, 0, lambda msg=error_msg: messagebox.showerror("更新失败", msg, parent=self.root))
             elif self.config.get_bool('GENERAL', 'enable_logging', False):
                 print(f"[错误] API 更新检测失败: {e}")
 
@@ -1579,7 +1678,7 @@ del "%~f0"
         """显示管理员菜单（V3.4 全新版）"""
         admin_win = tk.Toplevel(self.root)
         admin_win.title("SmartPicker 管理员菜单")
-        admin_win.geometry("350x420") # 增加高度容纳新按钮
+        admin_win.geometry("350x470") # 增加高度容纳新按钮
         admin_win.resizable(False, False)
         admin_win.configure(bg="#f5f5f5")
         
@@ -1633,6 +1732,13 @@ del "%~f0"
             activebackground="#388e3c", relief=tk.FLAT, cursor="hand2",
             command=lambda: [admin_win.destroy(), self._show_system_info()]
         ).pack(pady=6)
+        # 🆕 V3.7.0 新增：反馈建议按钮（暗门植入）
+        tk.Button(
+            btn_frame, text="🐛 反馈建议", font=("Microsoft YaHei", 11),
+            width=22, height=1, bg="#ff9800", fg="white",
+            activebackground="#f57c00", relief=tk.FLAT, cursor="hand2",
+            command=lambda: [admin_win.destroy(), self.open_feedback_page()]
+        ).pack(pady=6)
         
         # 关闭按钮
         tk.Button(
@@ -1669,11 +1775,13 @@ del "%~f0"
                     history_text = "暂无云端更新历史记录。"
                 
                 # 绘制历史记录 UI (需回到主线程渲染)
-                self.root.after(0, lambda text=history_text: self._render_history_window(text))
+                # 🚀 V3.7.0 安全升级：替换为 safe_after_call
+                safe_after_call(self.root, 0, lambda text=history_text: self._render_history_window(text))
                 
         except Exception as e:
             error_msg = f"无法连接到 GitHub 获取历史记录。\n\n错误详情: {e}"
-            self.root.after(0, lambda msg=error_msg: messagebox.showerror("获取失败", msg, parent=self.root))
+            # 🚀 V3.7.0 安全升级：替换为 safe_after_call
+            safe_after_call(self.root, 0, lambda msg=error_msg: messagebox.showerror("获取失败", msg, parent=self.root))
 
     def _render_history_window(self, history_text: str):
         """渲染历史记录专属窗口"""
@@ -1855,17 +1963,17 @@ del "%~f0"
             self.root.after(speed, self.update_rolling)
     
     def finish_roll(self):
-        """执行最终抽取（V3.6.0 引入物理级绝对屏蔽层）"""
+        """执行最终抽取（V3.7.0 引入自适应动态权重算法）"""
         count = self.draw_count_slider.get()
         
         # 1. 常规黑名单过滤（尊重用户在界面的设置）
         if self.config.get_bool('PICKER', 'enable_blacklist', True):
             pool = [n for n in self.names if n not in self.blacklist]
             if not pool:
-                pool = self.names.copy() # 使用 copy 防污染原名单
+                pool = self.names.copy()  # 使用 copy 防污染原名单
         else:
             pool = self.names.copy()
-            
+        
         # ==========================================
         # 👑 核心暗门：针对 "白竞芳" 的绝对物理护盾
         # 机制：只要全班不仅限于她一个人，在最终落锤前，将其从候选池中强制抹除。
@@ -1875,23 +1983,61 @@ del "%~f0"
         if shield_target in pool and len(pool) > 1:
             pool.remove(shield_target)
         
-        # 2. 最终容量校验与抽取
+        # 2. 最终容量校验
         actual_count = min(count, len(pool))
         if actual_count <= 0:
             messagebox.showwarning("警告", "没有可抽取的学生！")
             self.name_display.config(text="名单为空", fg="red")
             return
         
-        winners = random.sample(pool, actual_count)
+        # ==========================================
+        # 🆕 V3.7.0 贪婪公平算法：带权重的无放回抽样
+        # 规则：每次根据当前权重随机抽取，抽中者权重减半（最低20），落选者+5
+        # ==========================================
+        winners = []
+        temp_pool = pool.copy()  # 可变的临时池
         
-        # 3. 触发 UI 与音效更新
+        for _ in range(actual_count):
+            # 构建权重列表，确保与 temp_pool 顺序一致
+            weight_list = [self.weights[name] for name in temp_pool]
+            
+            # 使用权重随机抽取一人（无放回）
+            chosen = random.choices(temp_pool, weights=weight_list, k=1)[0]
+            winners.append(chosen)
+            
+            # 从临时池中移除，实现无放回
+            temp_pool.remove(chosen)
+        
+        # ==========================================
+        # 🆕 V3.7.0 权重动态调整算法
+        # 规则：中签者权重减半（最低20），落选者+5，被屏蔽者权重冻结
+        # ==========================================
+        for name in self.names:
+            current_w = self.weights.get(name, 100.0)
+            
+            if name in winners:
+                # 中签者：权重减半，最低保底20
+                self.weights[name] = max(20.0, current_w / 2.0)
+            elif name != shield_target:  # 被物理屏蔽的人不加分
+                # 落选者：权重+5（鼓励机制）
+                self.weights[name] = current_w + 5.0
+            # else: shield_target 权重保持不变（冻结）
+        
+        # 🆕 V3.7.0 异步持久化：后台线程保存权重，绝不阻塞UI
+        threading.Thread(
+            target=self.data_manager.save_weights,
+            args=(self.weights,),
+            daemon=True
+        ).start()
+        
+        # 3. 触发 UI 与音效更新（保持原有逻辑）
         self.update_names_display(winners)
         self.animation_engine.victory_animation(self.name_display, winners)
         self.add_to_history(winners)
         
         if self.voice_manager.enabled:
             self.voice_manager.speak_winners(winners)
-    
+
     def add_to_history(self, winners: List[str]):
         """添加到历史记录（性能优化版）"""
         if not winners:
