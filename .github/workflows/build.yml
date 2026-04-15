@@ -159,11 +159,11 @@ jobs:
           REM 动态命名 ZIP 压缩包
           powershell -Command "Compress-Archive -Path 'portable\*' -DestinationPath 'SmartPicker_V${{ env.VERSION }}_Portable.zip' -Force"
 
-            - name: 上传到GitHub Releases
+      - name: 上传到GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/SmartPicker.exe
+           dist/SmartPicker.exe
             SmartPicker_V${{ env.VERSION }}_Portable.zip
             dianming.py
           draft: false
@@ -171,5 +171,3 @@ jobs:
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-          
