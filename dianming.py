@@ -1190,9 +1190,12 @@ class SmartPickerApp:
                     current_exe_name = os.path.basename(sys.executable) if getattr(sys, 'frozen', False) else "SmartPicker.exe"
                     download_url = f"https://github.com/{self.github_user}/{self.github_repo}/releases/latest/download/{current_exe_name}"
                     
-                    # 吸收 GLM 修复：使用默认参数捕获变量，锁死作用域
-                    # 🚀 V3.7.0 安全升级：替换为 safe_after_call
-                    safe_after_call(self.root, 0, lambda url=download_url, rv=remote_version, rn=release_notes: self._show_custom_update_dialog(rv, rn, url))
+                    if manual:
+                        # 🚀 手动检查：弹出带更新日志的对话框，供你审阅
+                        safe_after_call(self.root, 0, lambda url=download_url, rv=remote_version, rn=release_notes: self._show_custom_update_dialog(rv, rn, url))
+                    else:
+                        # 🚀 开机自动检查：还原静默更新灵魂！直接触发底层接力下载
+                        safe_after_call(self.root, 0, lambda url=download_url: self._perform_auto_update(url))
                 elif manual:
                     # 🚀 V3.7.0 安全升级：替换为 safe_after_call
                     safe_after_call(self.root, 0, lambda: messagebox.showinfo("检查更新", f"当前已经是最新版本 (v{self.current_version})！\n\n您正在使用的是最前沿的极客构建版。", parent=self.root))
