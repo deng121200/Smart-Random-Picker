@@ -1163,104 +1163,82 @@ class SmartPickerApp:
                 parent=self.root
             )
     def check_for_updates(self, manual=False):
-        """检查更新（GitHub API 抓取日志版 + Lambda闭包修复）"""
+        """检查更新（重构版：加入版本号清洗与诊断，彻底杜绝死循环）"""
         api_url = f"https://api.github.com/repos/{self.github_user}/{self.github_repo}/releases/latest"
         
         try:
             req = urllib.request.Request(
                 api_url,
                 headers={
-                    'User-Agent': 'SmartPicker-Updater/4.0',
+                    'User-Agent': 'SmartPicker-DefensiveUpdater/7.0',
                     'Accept': 'application/vnd.github.v3+json'
                 }
             )
             with urllib.request.urlopen(req, timeout=10) as response:
                 data = json.loads(response.read().decode('utf-8'))
                 
-                # 从 API 响应中提取纯净版本号和更新日志
-                remote_version = data.get('tag_name', '').lstrip('vV')
-                release_notes = data.get('body', '开发者未提供更新日志。')
+                # 🔍 核心修复：极致清洗版本号，剔除所有不可见字符和前缀
+                raw_remote = data.get('tag_name', '')
+                remote_version = "".join(c for c in raw_remote if c.isdigit() or c == '.')
+                local_version = "".join(c for c in self.current_version if c.isdigit() or c == '.')
                 
-                if remote_version and remote_version != self.current_version:
-                    # 检查是否被用户设置为"跳过此版本"
-                    skipped_version = self.config.get('GENERAL', 'skipped_version', '')
-                    if remote_version == skipped_version and not manual:
-                        return  # 如果是自动检查，且该版本被跳过，则静默退出
-                    
+                # 📢 诊断日志（仅在开启日志时显示，帮你抓出“幽灵字符”）
+                if self.config.get_bool('GENERAL', 'enable_logging', False):
+                    print(f"[更新诊断] 云端原始值: '{raw_remote}' -> 清洗后: '{remote_version}'")
+                    print(f"[更新诊断] 本地版本号: '{self.current_version}' -> 清洗后: '{local_version}'")
+                
+                # 只有清洗后的纯数字版本不一致时，才触发更新
+                if remote_version and remote_version != local_version:
                     current_exe_name = os.path.basename(sys.executable) if getattr(sys, 'frozen', False) else "SmartPicker.exe"
                     download_url = f"https://github.com/{self.github_user}/{self.github_repo}/releases/latest/download/{current_exe_name}"
                     
                     if manual:
-                        # 🚀 手动检查：弹出带更新日志的对话框，供你审阅
-                        safe_after_call(self.root, 0, lambda url=download_url, rv=remote_version, rn=release_notes: self._show_custom_update_dialog(rv, rn, url))
+                        safe_after_call(self.root, 0, lambda url=download_url, rv=remote_version, rn=data.get('body', ''): 
+                                      self._show_custom_update_dialog(rv, rn, url))
                     else:
-                        # 🚀 开机自动检查：还原静默更新灵魂！直接触发底层接力下载
-                        safe_after_call(self.root, 0, lambda url=download_url: self._perform_auto_update(url))
+                        skipped_version = self.config.get('GENERAL', 'skipped_version', '')
+                        if remote_version != skipped_version:
+                            # 🚀 V3.7.0 核心逻辑：自动更新必须异步，绝不阻塞主循环
+                            safe_after_call(self.root, 0, lambda url=download_url: self._perform_auto_update(url))
                 elif manual:
-                    # 🚀 V3.7.0 安全升级：替换为 safe_after_call
-                    safe_after_call(self.root, 0, lambda: messagebox.showinfo("检查更新", f"当前已经是最新版本 (v{self.current_version})！\n\n您正在使用的是最前沿的极客构建版。", parent=self.root))
+                    safe_after_call(self.root, 0, lambda: messagebox.showinfo("检查更新", f"当前已经是最新版本 (v{self.current_version})！", parent=self.root))
                     
         except Exception as e:
-            error_msg = f"无法连接到 GitHub 服务器检查更新。\n\n请检查网络连接或稍后重试。\n错误详情: {e}"
+            error_str = str(e)
+            if "403" in error_str:
+                error_msg = "GitHub 接口限流（403）。原因：请求过于频繁。请切换网络节点或一小时后再试。"
+            else:
+                error_msg = f"检查更新失败: {e}"
+                
             if manual:
-                # 🚀 V3.7.0 安全升级：替换为 safe_after_call
-                safe_after_call(self.root, 0, lambda msg=error_msg: messagebox.showerror("更新失败", msg, parent=self.root))
-            elif self.config.get_bool('GENERAL', 'enable_logging', False):
-                print(f"[错误] API 更新检测失败: {e}")
+                safe_after_call(self.root, 0, lambda msg=error_msg: messagebox.showerror("请求受限", msg, parent=self.root))
 
     def _show_custom_update_dialog(self, remote_version: str, release_notes: str, download_url: str):
-        """显示自定义更新对话框（含更新日志与跳过功能）"""
+        """显示自定义更新对话框"""
         dialog = tk.Toplevel(self.root)
         dialog.title("发现新版本！")
         dialog.geometry("550x450")
         dialog.resizable(False, False)
         dialog.configure(bg="#f5f5f5")
-        dialog.transient(self.root)  # 保持在主窗口之上
-        dialog.grab_set()  # 拦截对主窗口的其他操作
+        dialog.transient(self.root)
+        dialog.grab_set()
         
-        try:
-            dialog.iconbitmap(default="icon.ico")
-        except:
-            pass
-            
-        # 顶部标题栏
-        tk.Label(
-            dialog,
-            text=f"🚀 发现新版本 v{remote_version}",
-            font=("Microsoft YaHei", 18, "bold"),
-            bg="#f5f5f5", fg="#2196f3"
-        ).pack(pady=(20, 5))
+        tk.Label(dialog, text=f"🚀 发现新版本 v{remote_version}", font=("Microsoft YaHei", 18, "bold"), bg="#f5f5f5", fg="#2196f3").pack(pady=(20, 5))
+        tk.Label(dialog, text=f"当前版本: v{self.current_version}  →  最新版本: v{remote_version}", font=("Microsoft YaHei", 10), bg="#f5f5f5", fg="#666666").pack(pady=(0, 15))
         
-        tk.Label(
-            dialog,
-            text=f"当前版本: v{self.current_version}  →  最新版本: v{remote_version}",
-            font=("Microsoft YaHei", 10),
-            bg="#f5f5f5", fg="#666666"
-        ).pack(pady=(0, 15))
-        
-        # 中间的更新日志展示区
         log_frame = tk.Frame(dialog, bg="#ffffff", bd=1, relief=tk.SOLID)
         log_frame.pack(fill=tk.BOTH, expand=True, padx=25, pady=5)
         
         scrollbar = tk.Scrollbar(log_frame)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         
-        text_widget = tk.Text(
-            log_frame,
-            font=("Microsoft YaHei", 10),
-            wrap=tk.WORD,
-            yscrollcommand=scrollbar.set,
-            bg="#f9f9f9",
-            padx=15, pady=15
-        )
+        text_widget = tk.Text(log_frame, font=("Microsoft YaHei", 10), wrap=tk.WORD, yscrollcommand=scrollbar.set, bg="#f9f9f9", padx=15, pady=15)
         text_widget.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.config(command=text_widget.yview)
         
-        # 插入日志并设置为只读
-        text_widget.insert(tk.END, "【更新日志 Release Notes】\n" + "="*40 + "\n\n" + release_notes)
+        text_widget.insert(tk.END, "【更新日志 Release Notes】\n" + "="*40 + "\n\n" + (release_notes or "开发者未提供详情"))
         text_widget.config(state=tk.DISABLED)
         
-        # 底部按钮区
         btn_frame = tk.Frame(dialog, bg="#f5f5f5")
         btn_frame.pack(fill=tk.X, padx=25, pady=20)
         
@@ -1275,133 +1253,76 @@ class SmartPickerApp:
         def remind_later():
             dialog.destroy()
             
-        # 立即更新按钮
-        update_btn = tk.Button(
-            btn_frame, text="立即更新 (推荐)", font=("Microsoft YaHei", 11, "bold"),
-            bg="#4caf50", fg="white", activebackground="#388e3c", cursor="hand2",
-            relief=tk.FLAT, command=do_update, width=15
-        )
+        update_btn = tk.Button(btn_frame, text="立即覆盖更新", font=("Microsoft YaHei", 11, "bold"), bg="#4caf50", fg="white", activebackground="#388e3c", cursor="hand2", relief=tk.FLAT, command=do_update, width=15)
         update_btn.pack(side=tk.RIGHT, padx=(10, 0))
         
-        # 跳过版本按钮
-        skip_btn = tk.Button(
-            btn_frame, text="跳过此版本", font=("Microsoft YaHei", 10),
-            bg="#e0e0e0", fg="#333333", activebackground="#bdbdbd", cursor="hand2",
-            relief=tk.FLAT, command=skip_version, width=12
-        )
+        skip_btn = tk.Button(btn_frame, text="跳过此版本", font=("Microsoft YaHei", 10), bg="#e0e0e0", fg="#333333", activebackground="#bdbdbd", cursor="hand2", relief=tk.FLAT, command=skip_version, width=12)
         skip_btn.pack(side=tk.LEFT)
         
-        # 以后再说按钮
-        cancel_btn = tk.Button(
-            btn_frame, text="以后再说", font=("Microsoft YaHei", 10),
-            bg="#ffffff", fg="#333333", activebackground="#f0f0f0", cursor="hand2",
-            relief=tk.FLAT, command=remind_later, width=10
-        )
+        cancel_btn = tk.Button(btn_frame, text="以后再说", font=("Microsoft YaHei", 10), bg="#ffffff", fg="#333333", activebackground="#f0f0f0", cursor="hand2", relief=tk.FLAT, command=remind_later, width=10)
         cancel_btn.pack(side=tk.RIGHT)
-    
+
     def _perform_auto_update(self, download_url: str):
-        """执行金蝉脱壳接力更新（多模型融合完美版）"""
+        """执行自动覆盖更新（Win7 强效版：多重文件锁解锁机制）"""
         if not getattr(sys, 'frozen', False):
-            messagebox.showinfo("提示", "当前处于源码运行模式，请前往 GitHub 手动拉取代码。")
-            webbrowser.open(f"https://github.com/{self.github_user}/{self.github_repo}/releases/latest")
+            messagebox.showinfo("提示", "当前为源码运行模式，无法替换 exe。")
             return
         
-        current_exe_path = sys.executable
+        current_exe_path = os.path.abspath(sys.executable)
         exe_dir = os.path.dirname(current_exe_path)
         new_exe_path = current_exe_path + ".new"
         bat_path = os.path.join(exe_dir, "update.bat")
-        backup_exe_path = current_exe_path + ".backup"
         
-        # 1. 禁用 UI，初始化进度显示
         self.btn.config(state=tk.DISABLED)
-        self.name_display.config(text="准备下载更新...", fg="#ff9800", font=("Microsoft YaHei", 30, "bold"))
+        self.name_display.config(text="正在拉取新版...", fg="#ff9800", font=("Microsoft YaHei", 40, "bold"))
         self.root.update()
         
-        try:
-            # 2. 发起下载请求并校验
-            req = urllib.request.Request(download_url, headers={'User-Agent': 'SmartPicker-Updater'})
-            with urllib.request.urlopen(req, timeout=30) as response:
-                if response.status != 200:
-                    raise Exception(f"服务器响应异常 (HTTP {response.status})")
-                
-                content_length = int(response.headers.get('Content-Length', 0))
-                downloaded = 0
-                
-                # 3. 分块下载与 Tkinter UI 刷新
-                with open(new_exe_path, 'wb') as out_file:
-                    while True:
-                        chunk = response.read(8192)
-                        if not chunk:
-                            break
-                        out_file.write(chunk)
-                        downloaded += len(chunk)
-                        
-                        if content_length > 0:
-                            progress = int((downloaded / content_length) * 100)
-                            self.name_display.config(text=f"正在下载更新... {progress}%")
-                            self.root.update()
-            
-            # 4. 下载完整性校验
-            if os.path.getsize(new_exe_path) < 10240:  # 小于 10KB 绝对是错误页面
-                raise Exception("下载文件体积异常，可能被网络拦截。")
-            
-            # 5. 生成备份文件
-            if os.path.exists(current_exe_path):
-                import shutil
-                shutil.copy2(current_exe_path, backup_exe_path)
-            
-            # 6. 生成容灾 BAT 脚本（Gemini 修复：坚决剔除 chcp 65001，纯正 mbcs）
-            bat_content = f"""@echo off
-title SmartPicker 自动更新程序
-echo 正在等待主程序退出以释放文件锁...
-ping 127.0.0.1 -n 3 > nul
-echo 正在应用更新...
+        def download_worker():
+            try:
+                req = urllib.request.Request(download_url, headers={'User-Agent': 'SmartPicker-AutoUpdater'})
+                with urllib.request.urlopen(req, timeout=30) as response:
+                    content_length = int(response.headers.get('Content-Length', 0))
+                    downloaded = 0
+                    
+                    with open(new_exe_path, 'wb') as out_file:
+                        while True:
+                            chunk = response.read(8192)
+                            if not chunk: break
+                            out_file.write(chunk)
+                            downloaded += len(chunk)
+                            if content_length > 0:
+                                p = int((downloaded / content_length) * 100)
+                                safe_after_call(self.root, 0, lambda val=p: self.name_display.config(text=f"下载更新中 {val}%"))
 
+                # 🚀 生成“暴力解锁”覆盖脚本：针对 Win7 的极端死循环重试
+                bat_content = f"""@echo off
+title SmartPicker 强制更新引擎
+echo 正在等待文件锁释放...
+:retry_lock
+ping 127.0.0.1 -n 2 > nul
+del /f /q "{current_exe_path}"
 if exist "{current_exe_path}" (
-    del /f /q "{current_exe_path}"
+    echo [警告] 文件仍被占用，正在重试...
+    goto retry_lock
 )
-
-if exist "{new_exe_path}" (
-    move /y "{new_exe_path}" "{current_exe_path}" > nul
-    if errorlevel 1 (
-        echo [错误] 替换新版本失败！
-        if exist "{backup_exe_path}" (
-            echo 正在尝试回滚旧版本...
-            copy /y "{backup_exe_path}" "{current_exe_path}" > nul
-        )
-        pause
-        exit /b 1
-    )
-) else (
-    echo [错误] 未找到下载的更新文件！
-    pause
-    exit /b 1
-)
-
-if exist "{backup_exe_path}" del /f /q "{backup_exe_path}"
-echo 更新完成！正在重启程序...
+echo 旧版本清理成功，正在覆盖...
+move /y "{new_exe_path}" "{current_exe_path}" > nul
 start "" "{current_exe_path}"
 del "%~f0"
 """
-            # 使用 mbcs 强制写入 ANSI，确保 Win7 CMD 中文完美显示
-            with open(bat_path, "w", encoding="mbcs") as f:
-                f.write(bat_content)
-            
-            # 7. 移交控制权并完全脱钩自毁
-            # 抛弃 subprocess，使用 Windows 原生 API 彻底分离进程
-            os.startfile(bat_path)
-            self._on_closing()
-            sys.exit()
-            
-        except Exception as e:
-            # 清理残局，恢复 UI
-            if os.path.exists(new_exe_path):
-                os.remove(new_exe_path)
-            self.name_display.config(text="已就绪", fg="#0056b3", font=("Microsoft YaHei", 55, "bold"))
-            self.btn.config(state=tk.NORMAL)
-            messagebox.showerror("更新失败", f"自动更新失败，请检查网络。\n\n详情: {e}", parent=self.root)
-            self.load_data()
-    
+                with open(bat_path, "w", encoding="mbcs") as f:
+                    f.write(bat_content)
+                
+                os.startfile(bat_path)
+                safe_after_call(self.root, 0, self._on_closing)
+                
+            except Exception as e:
+                if os.path.exists(new_exe_path): os.remove(new_exe_path)
+                safe_after_call(self.root, 0, lambda: self.name_display.config(text="更新异常", fg="red"))
+                safe_after_call(self.root, 0, lambda: self.btn.config(state=tk.NORMAL))
+
+        threading.Thread(target=download_worker, daemon=True).start()
+
     def open_secret_menu(self, event):
         """打开密码菜单"""
         pwd = simpledialog.askstring(
