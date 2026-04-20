@@ -133,7 +133,7 @@ class ConfigManager:
         self.config_path = os.path.join(BASE_DIR, "config.ini")
         self.default_config = {
             'GENERAL': {
-                'version': '3.7.0',
+                'version': '3.8.0',
                 'language': 'zh_CN',
                 'auto_check_update': 'true',
                 'enable_logging': 'true',
@@ -878,7 +878,7 @@ class SmartPickerApp:
         self.voice_manager = VoiceManager()
         self.animation_engine = AnimationEngine(root)
         
-        self.current_version = "3.7.0"
+        self.current_version = "3.8.0"
         self.github_user = "deng121200"
         self.github_repo = "Smart-Random-Picker"
         
