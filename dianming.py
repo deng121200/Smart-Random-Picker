@@ -2368,10 +2368,10 @@ class UIComponents:
         return listbox
 
     @staticmethod
-    def create_combobox(parent, values: List[str], textvariable: tk.StringVar = None, **kwargs) -> tk.ttk.Combobox:
+    def create_combobox(parent, values: List[str], textvariable: tk.StringVar = None, **kwargs) -> ttk.Combobox:
         """创建下拉框"""
         try:
-            combobox = tk.ttk.Combobox(parent, values=values, textvariable=textvariable, **kwargs)
+            combobox = ttk.Combobox(parent, values=values, textvariable=textvariable, **kwargs)
             return combobox
         except:
             var = tk.StringVar(value=values[0] if values else '')
@@ -2422,10 +2422,10 @@ class UIComponents:
         return frame, canvas, scrollbar
 
     @staticmethod
-    def create_notebook(parent) -> tk.ttk.Notebook:
+    def create_notebook(parent) -> ttk.Notebook:
         """创建选项卡"""
         try:
-            return tk.ttk.Notebook(parent)
+            return ttk.Notebook(parent)
         except:
             return UIComponents._create_simple_notebook(parent)
 
@@ -2454,10 +2454,10 @@ class UIComponents:
         return SimpleNotebook(parent)
 
     @staticmethod
-    def create_progressbar(parent, **kwargs) -> tk.ttk.Progressbar:
+    def create_progressbar(parent, **kwargs) -> ttk.Progressbar:
         """创建进度条"""
         try:
-            return tk.ttk.Progressbar(parent, **kwargs)
+            return ttk.Progressbar(parent, **kwargs)
         except:
             canvas = tk.Canvas(parent, height=20, bg='white')
             canvas.progress_rect = None
@@ -2471,10 +2471,10 @@ class UIComponents:
             return canvas
 
     @staticmethod
-    def create_treeview(parent, columns: List[str], headings: List[str] = None, **kwargs) -> tk.ttk.Treeview:
+    def create_treeview(parent, columns: List[str], headings: List[str] = None, **kwargs) -> ttk.Treeview:
         """创建树形视图"""
         try:
-            tree = tk.ttk.Treeview(parent, columns=columns, show='headings', **kwargs)
+            tree = ttk.Treeview(parent, columns=columns, show='headings', **kwargs)
 
             if headings is None:
                 headings = columns
@@ -2948,7 +2948,7 @@ class SmartPickerProApp:
             bg=self.theme['background']
         ).pack(side=tk.LEFT, padx=(0, 5))
 
-        self.class_combobox = tk.ttk.Combobox(
+        self.class_combobox = ttk.Combobox(
             class_frame, textvariable=self.class_var,
             font=("Microsoft YaHei", 10), width=15,
             state='readonly'
@@ -2992,7 +2992,7 @@ class SmartPickerProApp:
             "竞赛模式", "轮盘模式", "抽奖模式", "顺序模式",
             "随机分组", "淘汰模式"
         ]
-        self.mode_combobox = tk.ttk.Combobox(
+        self.mode_combobox = ttk.Combobox(
             mode_frame, textvariable=self.mode_var,
             values=modes, font=("Microsoft YaHei", 10), width=12,
             state='readonly'
@@ -6813,7 +6813,7 @@ class TabWidget:
 
     def __init__(self, parent):
         self.parent = parent
-        self.notebook = tk.ttk.Notebook(parent)
+        self.notebook = ttk.Notebook(parent)
         self.tabs = {}
         self.current_tab = None
 
@@ -7476,7 +7476,7 @@ class TimePickerWidget:
         minutes = [f"{i:02d}" for i in range(60)]
         seconds = [f"{i:02d}" for i in range(60)]
 
-        self.hour_combo = tk.ttk.Combobox(
+        self.hour_combo = ttk.Combobox(
             self.frame, textvariable=self.hour_var,
             values=hours, width=5,
             state="readonly"
@@ -7486,7 +7486,7 @@ class TimePickerWidget:
 
         tk.Label(self.frame, text=":", font=("Microsoft YaHei", 12), bg="white").pack(side=tk.LEFT)
 
-        self.minute_combo = tk.ttk.Combobox(
+        self.minute_combo = ttk.Combobox(
             self.frame, textvariable=self.minute_var,
             values=minutes, width=5,
             state="readonly"
@@ -7496,7 +7496,7 @@ class TimePickerWidget:
 
         tk.Label(self.frame, text=":", font=("Microsoft YaHei", 12), bg="white").pack(side=tk.LEFT)
 
-        self.second_combo = tk.ttk.Combobox(
+        self.second_combo = ttk.Combobox(
             self.frame, textvariable=self.second_var,
             values=seconds, width=5,
             state="readonly"
