@@ -1,56 +1,58 @@
-# 🎲 SmartPicker 课堂智能随机点名系统
+# 🎓 SmartPicker Pro 全能智慧课堂管理系统
 
-![Python](https://img.shields.io/badge/Python-3.8.10-blue.svg)
-![Platform](https://img.shields.io/badge/Platform-Windows%207%20SP1+-lightgrey.svg)
-![Version](https://img.shields.io/badge/Version-V3.7.0-success.svg)
+![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)
+![Platform](https://img.shields.io/badge/Platform-Windows%20|%20macOS%20|%20Linux-lightgrey.svg)
+![Version](https://img.shields.io/badge/Version-V5.0.0%20Pro-success.svg)
 ![License](https://img.shields.io/badge/License-MIT-green.svg)
+![i18n](https://img.shields.io/badge/i18n-ZH%20|%20EN%20|%20JA%20|%20KO-orange.svg)
 
-**SmartPicker** 是一款专为**老旧 Windows 7 多媒体白板**打造的极简、纯净、极客级课堂点名工具。
-告别繁杂的环境配置与卡顿的界面，单文件开箱即用，内置工业级热更新与智能防崩底层架构。
+**SmartPicker Pro** 是一款开源、跨平台、全能型的智慧课堂数字化管理中枢。
+项目由最初的“课堂随机点名器”进化而来，现已集成**多模式点名、智能考勤、作业成绩管理、数据可视化报表生成**等核心教务功能。
 
-## ✨ 核心特性 (V3.7.0)
+## ✨ 核心特性
 
-* **🧠 自适应动态权重算法**：打破绝对随机的概率困境。未抽中者权重累加（+5），中签者权重减半（保底20）。越抽越均匀，兼顾运气与绝对公平。
-* **🛡️ 异步安全守护引擎**：手搓级 `safe_after_call` 防崩溃拦截。彻底解决 Tkinter 在多线程网络请求（如后台检查更新）时遭遇强制关闭导致的 Fatal Error 闪退。
-* **🚀 工业级 OTA 金蝉脱壳**：内置静默热更新机制，利用原生 CMD 脚本（mbcs 纯净编码）绕过 Windows 文件锁，实现一键无感升级与容灾回滚。
-* **🔒 极客暗门与加密沙箱**：
-  * **UI 净化**：主界面无任何多余干扰按钮，防学生误触打开浏览器。
-  * **暗门唤醒**：双击大标题并输入特定密码（`114514`）即可唤出图形化管理后台。
-  * **加密漫游**：彻底抛弃明文，黑名单数据采用 Base64 + 字节反转加密存储，支持 U 盘拔插漫游。
-  * **物理护盾**：内置可定制的物理级人物屏蔽机制（有残影参与动画，但绝对不会落锤中签）。
-* **兼容极致**：彻底剔除 Pillow 依赖，原生双模编码识别引擎，在 Win7 极其脆弱的图像与文本环境中坚若磐石。
+* **🎯 10维抽取引擎**：普通/加权/分组/轮盘/淘汰/竞赛等 10 种点名模式，满足任何课堂互动场景。
+* **🌍 全球化跨平台**：完美运行于 Windows、macOS 和 Linux。内置中文、英文、日文、韩文四国语言无缝切换。
+* **🏫 全生命周期管理**：
+  * **考勤审批**：迟到、早退、请假全流程记录。
+  * **考务与作业**：作业分发批改、考场自动排座、成绩雷达图分析。
+  * **游戏化互动**：支持积分排行、星星奖励与隐藏徽章（成就系统）解锁。
+* **📊 深度数据驱动**：底层基于 SQLite 关系型数据库。支持利用 `matplotlib` 动态生成数据报表，并通过 `fpdf` / `openpyxl` 引擎一键导出 PDF 综合报告与 Excel 电子表格。
+* **🎨 现代化界面**：8套预设 UI 主题（暗夜模式、浪漫粉、科技蓝等），支持丰富的 GUI 呼吸/渐变动画引擎。
 
-## 📦 快速开始
+## 📥 快速下载 (开箱即用)
 
-### 1. 下载便携版 (推荐)
-请前往 [Releases 页面](https://github.com/deng121200/Smart-Random-Picker/releases/latest) 下载最新的 `SmartPicker_Vxxx_Portable.zip`。
-解压后**无需安装 Python**，双击 `SmartPicker.exe` 即可运行。
+我们通过 GitHub Actions 矩阵构建了全平台的免安装可执行文件：
+👉 [点击前往 Releases 下载最新版本](https://github.com/deng121200/Smart-Random-Picker/releases/latest)
 
-### 2. 初始化配置
-程序首次运行将自动生成以下文件：
-* `名单.txt`：按行存放姓名，支持 `UTF-8` 与 `GBK` 智能识别。
-* `weights.json`：自适应权重数据库（自动维护，请勿手动修改）。
-* `system_config.dat`：加密存储的黑名单数据。
-* `config.ini`：包含动画速度、音效开关等基础设置。
+* **Windows 用户**：直接下载并运行 `SmartPicker-Pro.exe`
+* **macOS / Linux 用户**：下载对应平台的打包程序即可运行
 
-## 🛠️ 本地源码运行
+## 🛠️ 本地开发与源码运行
 
-由于本项目高度优化了 Windows 底层调用，如需二次开发，请确保您的环境满足以下要求：
+如果你想参与二次开发或构建自己的插件，请按以下步骤配置环境：
 
-```bash
-# 克隆仓库
-git clone [https://github.com/deng121200/Smart-Random-Picker.git](https://github.com/deng121200/Smart-Random-Picker.git)
+### 1. 克隆代码
+git clone https://github.com/deng121200/Smart-Random-Picker.git
+cd Smart-Random-Picker
 
-# 安装依赖
-pip install pygame==2.5.2 pywin32==306 pyinstaller==5.13.2
+### 2. 安装核心生态依赖
+本项目采用了优雅降级设计，缺少某些库只影响特定功能，不会导致崩溃。但为了获得完整体验（如图表、PDF导出、语音），建议安装全量依赖：
 
-# 运行主程序
+# 基础运行库与图表/办公导出生态
+pip install pygame pyinstaller openpyxl fpdf python-docx matplotlib Pillow psutil
+
+# Windows 专属依赖（用于 TTS 语音播报，Mac/Linux 用户无需安装）
+pip install pywin32
+
+### 3. 启动项目
 python dianming.py
-```
 
-## 🤖 自动化 CI/CD
-本项目已接入 GitHub Actions。开发者只需推送带 `v*` 前缀的 Tag（如 `v3.7.0`），系统将自动剥离版本号、生成带有环境注入的 `config.ini`、打包 `exe` 并发布 Release。
+## 🧩 插件系统 (Plugin Architecture)
+V5.0 引入了高度可扩展的插件沙箱机制。开发者只需在 `plugins` 目录下创建 Python 脚本并实现 `Plugin` 基类，即可无缝向主程序注入新菜单、新功能与监听底层生命周期事件。详情请见 `plugins/example_plugin.py` 示例。
+
+## 🤝 贡献与反馈
+欢迎提交 Pull Requests 或发布 Issues。让我们一起让教育技术变得更酷！
 
 ---
-*Powered by Python Tkinter & 极客精神 | Inspiration from @遇屿迟*
-
+*Architected and crafted with ❤️ by [@遇屿迟]*
