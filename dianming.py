@@ -20,6 +20,7 @@ SmartPicker Pro V5.0 - 全功能智慧课堂点名系统
 """
 
 import tkinter as tk
+from tkinter import ttk  # <--- 必须加上这致命的一行！
 from tkinter import simpledialog, messagebox, font as tkfont, filedialog
 import random
 import os
