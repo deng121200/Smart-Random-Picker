@@ -1,4 +1,4 @@
-name: SmartPicker 自动打包 (OTA 热更新版)
+name: SmartPicker Pro V5.0 全平台构建矩阵
 
 on:
   push:
@@ -10,149 +10,42 @@ permissions:
 
 jobs:
   build:
-    runs-on: windows-latest
-    
+    name: 构建于 ${{ matrix.os }}
+    # 核心进化：矩阵策略，同时启动 Win, Mac, Linux 三台机器并行打包
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
 
-      - name: 🧬 解析动态版本号
-        id: get_version
-        shell: bash
-        run: |
-          TAG_NAME="${{ github.ref_name }}"
-          VERSION="${TAG_NAME#v}"
-          VERSION="${VERSION#V}"
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
-          echo "✅ 成功提取纯净版本号: $VERSION"
-
-      - name: 设置Python 3.8环境
+      - name: 设置 Python 3.8
         uses: actions/setup-python@v5
         with:
           python-version: '3.8'
-          architecture: 'x64'
 
-      - name: 安装依赖
-        shell: cmd
+      - name: 📦 安装核心跨平台生态依赖
         run: |
-          @echo off
-          echo [步骤3] 安装依赖...
-          pip install pygame==2.5.2 pywin32==306 pyinstaller==5.13.2
-          if errorlevel 1 (
-            echo ❌ 依赖安装失败
-            exit /b 1
-          )
-          echo ✅ 依赖安装完成
+          python -m pip install --upgrade pip
+          pip install pyinstaller pygame openpyxl fpdf python-docx matplotlib Pillow psutil
 
-      - name: 检查主文件
-        shell: cmd
+      - name: 🪟 安装 Windows 专属依赖 (语音播报支持)
+        if: matrix.os == 'windows-latest'
+        run: pip install pywin32
+
+      - name: 🔨 执行全平台 PyInstaller 打包
         run: |
-          @echo off
-          if not exist "dianming.py" (
-            echo ❌ 未找到 dianming.py
-            exit /b 1
-          )
-          echo ✅ 找到 dianming.py
+          pyinstaller --noconsole --onefile --clean --name "SmartPicker-Pro" dianming.py
 
-      - name: 执行PyInstaller打包
-        shell: cmd
-        run: |
-          @echo off
-          echo [步骤5] 开始打包...
-          if exist "icon.ico" (
-            echo 发现自定义图标，使用图标打包...
-            pyinstaller --noconsole --onefile --clean --name "SmartPicker" --icon=icon.ico --hidden-import=pygame --hidden-import=win32com --hidden-import=win32com.client --hidden-import=win32com.extracommod dianming.py
-          ) else (
-            echo 未发现自定义图标，使用默认图标打包...
-            pyinstaller --noconsole --onefile --clean --name "SmartPicker" --hidden-import=pygame --hidden-import=win32com --hidden-import=win32com.client --hidden-import=win32com.extracommod dianming.py
-          )
-          if errorlevel 1 (
-            echo ❌ 打包失败
-            exit /b 1
-          )
-          echo ✅ 打包成功
-
-      - name: 验证与创建便携版
-        shell: cmd
-        run: |
-          @echo off
-          if not exist "dist\SmartPicker.exe" (
-            echo ❌ 未生成可执行文件
-            exit /b 1
-          )
-          echo 清理并创建便携版目录...
-          if exist portable rmdir /s /q portable
-          mkdir portable
-          copy "dist\SmartPicker.exe" "portable\SmartPicker.exe" >nul
-          copy "dianming.py" "portable\源码_backup.py" >nul 2>&1
-          if exist "名单.txt" (
-            copy "名单.txt" "portable\名单.txt" >nul
-          ) else (
-            echo 张三> portable\名单.txt
-            echo 李四>> portable\名单.txt
-            echo 王五>> portable\名单.txt
-          )
-          (
-            echo # SmartPicker V${{ env.VERSION }} 配置文件
-            echo [GENERAL]
-            echo version = ${{ env.VERSION }}
-            echo language = zh_CN
-            echo auto_check_update = true
-            echo enable_logging = true
-            echo log_level = INFO
-            echo.
-            echo [UI]
-            echo theme = light
-            echo animation_speed = medium
-            echo font_family = Microsoft YaHei
-            echo enable_animations = true
-            echo.
-            echo [PICKER]
-            echo default_draw_count = 1
-            echo max_draw_count = 20
-            echo enable_blacklist = true
-            echo voice_enabled = true
-            echo voice_rate = 0
-            echo voice_volume = 100
-            echo.
-            echo [AUDIO]
-            echo enable_sound = true
-            echo rolling_sound_volume = 80
-            echo victory_sound_volume = 100
-          ) > portable\config.ini
-          (
-            echo ====================================
-            echo SmartPicker V${{ env.VERSION }} 便携版
-            echo ====================================
-            echo 版本: ${{ env.VERSION }}
-            echo 系统要求: Windows 7 SP1 (64位)
-            echo.
-            echo 包含文件:
-            echo 1. SmartPicker.exe     - 主程序
-            echo 2. 名单.txt            - 学生名单
-            echo 3. config.ini          - 配置文件
-            echo 4. 源码_backup.py      - 源代码备份
-            echo.
-            echo 🚀 OTA自动进化引擎就绪
-            echo 软件现已支持静默热更新，发现新版本后点击同意即可一键无感升级！
-            echo.
-            echo 极客进阶：暗箱管理
-            echo - 在软件主界面双击顶部大标题“课堂随机点名”
-            echo - 输入密码 114514 即可进入图形化管理后台
-            echo - 黑名单数据隐蔽加密存储，支持U盘热插拔漫游
-            echo.
-            echo 项目地址: https://github.com/deng121200/Smart-Random-Picker
-            echo ====================================
-          ) > portable\README.txt
-          powershell -Command "Compress-Archive -Path 'portable\*' -DestinationPath 'SmartPicker_V${{ env.VERSION }}_Portable.zip' -Force"
-
-      - name: 上传到GitHub Releases
+      - name: 🚀 汇聚并发布全平台产物
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/SmartPicker.exe
-            SmartPicker_V${{ env.VERSION }}_Portable.zip
-            dianming.py
+            dist/SmartPicker-Pro.exe
+            dist/SmartPicker-Pro
+            dist/SmartPicker-Pro.app/**/*
           draft: false
           prerelease: false
           generate_release_notes: true
