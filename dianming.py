@@ -2524,6 +2524,9 @@ def safe_after_call(root, delay_ms: int, func: Callable, *args, **kwargs):
 # ==========================================
 # 动画引擎
 # ==========================================
+# ==========================================
+# 动画引擎
+# ==========================================
 class AnimationEngine:
     """动画引擎"""
 
@@ -2711,56 +2714,21 @@ class AnimationEngine:
         animate()
 
     def fade_in_animation(self, widget, duration: int = 500):
-        """淡入动画"""
-        if not self.config.get('animation_enabled', True):
+        """淡入动画（已修复 Tkinter 底层报错）"""
+        try:
             widget.place(tk.NORMAL)
-            return
-
-        alpha = [0.0]
-        step = 0.05
-
-        def animate():
-            if alpha[0] < 1.0:
-                try:
-                    widget.attributes('-alpha', alpha[0])
-                    alpha[0] += step
-                    widget.after(int(duration * step), animate)
-                except tk.TclError:
-                    return
-
-        widget.attributes('-alpha', 0)
-        widget.place(tk.NORMAL)
-        animate()
+        except:
+            widget.pack()
 
     def fade_out_animation(self, widget, duration: int = 500, callback: Callable = None):
-        """淡出动画"""
-        if not self.config.get('animation_enabled', True):
-            widget.place(tk.HIDDEN)
-            if callback:
-                callback()
-            return
-
-        alpha = [1.0]
-        step = 0.05
-
-        def animate():
-            if alpha[0] > 0:
-                try:
-                    widget.attributes('-alpha', alpha[0])
-                    alpha[0] -= step
-                    widget.after(int(duration * step), animate)
-                except tk.TclError:
-                    return
-            else:
-                widget.place(tk.HIDDEN)
-                if callback:
-                    callback()
-
-        animate()
-
-# ==========================================
-# 主应用类
-# ==========================================
+        """淡出动画（已修复 Tkinter 底层报错）"""
+        try:
+            widget.place_forget()
+        except:
+            widget.pack_forget()
+            
+        if callback:
+            safe_after_call(widget.winfo_toplevel(), 0, callback)
 class SmartPickerProApp:
     """SmartPicker Pro 主应用"""
 
@@ -4449,13 +4417,6 @@ def main():
             )
         except:
             pass
-
-
-if __name__ == "__main__":
-    main()
-
-
-
 # ==========================================
 # 高级功能模块
 # ==========================================
@@ -10347,144 +10308,7 @@ class PermissionManager:
 # ==========================================
 # SmartPicker Pro V5.0 全功能整合
 # ==========================================
-
-class SmartPickerProV5:
-    """SmartPicker Pro V5.0 - 终极版课堂点名系统"""
-    
-    def __init__(self):
-        # 核心组件
-        self.picker = StudentPicker()
-        self.weight_manager = WeightManager()
-        self.blacklist_manager = BlacklistManager()
-        self.record_manager = RecordManager()
-        
-        # 扩展组件
-        self.grade_manager = GradeManager()
-        self.attendance_manager = AttendanceManager()
-        self.homework_manager = HomeworkManager()
-        self.notice_board = NoticeBoard()
-        self.exam_scheduler = ExamScheduler()
-        self.leave_system = LeaveApprovalSystem()
-        self.backup_manager = DataBackupManager()
-        self.stats_analyzer = StatisticsAnalyzer()
-        self.permission_manager = PermissionManager()
-        
-        # 配置
-        self.config = {
-            'version': '5.0',
-            'build_date': '2026-06-13',
-            'features': [
-                '智能点名', '权重系统', '黑名单加密', '成绩管理',
-                '考勤管理', '作业管理', '通知公告', '考试安排',
-                '请假审批', '数据备份', '统计分析', '权限管理'
-            ]
-        }
-        
-        self._init_default_data()
-    
-    def _init_default_data(self):
-        """初始化默认数据"""
-        # 创建管理员账户
-        self.permission_manager.create_user(
-            user_id='admin001',
-            username='管理员',
-            role=Role.ADMIN
-        )
-        
-        # 创建教师账户
-        self.permission_manager.create_user(
-            user_id='teacher001',
-            username='教师',
-            role=Role.TEACHER
-        )
-        
-        # 初始化默认配置
-        self.config['max_history_days'] = 365
-        self.config['auto_backup_enabled'] = True
-        self.config['backup_interval_hours'] = 24
-    
-    def pick_student(self) -> str:
-        """执行点名"""
-        student = self.picker.pick()
-        if student:
-            # 记录点名
-            self.record_manager.add_record(
-                student_id=student.id,
-                student_name=student.name,
-                class_name=student.class_name
-            )
-            # 更新权重
-            self.weight_manager.update_weight(student.id)
-        return student.name if student else ""
-    
-    def get_full_report(self) -> str:
-        """获取完整报告"""
-        report = "=" * 60 + "\n"
-        report += "SmartPicker Pro V5.0 系统报告\n"
-        report += "=" * 60 + "\n\n"
-        
-        report += f"版本: {self.config['version']}\n"
-        report += f"构建日期: {self.config['build_date']}\n\n"
-        
-        report += "功能模块:\n"
-        for feature in self.config['features']:
-            report += f"  ✓ {feature}\n"
-        
-        report += f"\n学生总数: {len(self.picker.students)}\n"
-        report += f"历史记录: {len(self.record_manager.records)} 条\n"
-        report += f"黑名单人数: {len(self.blacklist_manager.blacklist)}\n"
-        
-        return report
-    
-    def export_all_data(self) -> Dict:
-        """导出所有数据"""
-        return {
-            'students': [vars(s) for s in self.picker.students],
-            'records': [vars(r) for r in self.record_manager.records],
-            'blacklist': [vars(b) for b in self.blacklist_manager.blacklist],
-            'config': self.config,
-            'exported_at': datetime.now().isoformat()
-        }
-    
-    def import_data(self, data: Dict) -> bool:
-        """导入数据"""
-        try:
-            # 恢复学生数据
-            self.picker.students = [Student(**s) for s in data.get('students', [])]
-            
-            # 恢复记录
-            self.record_manager.records = [PickRecord(**r) for r in data.get('records', [])]
-            
-            # 恢复黑名单
-            self.blacklist_manager.blacklist = [BlacklistEntry(**b) for b in data.get('blacklist', [])]
-            
-            return True
-        except Exception as e:
-            print(f"导入失败: {e}")
-            return False
-    
-    def backup_data(self, backup_name: str = "") -> str:
-        """备份数据"""
-        data = self.export_all_data()
-        return self.backup_manager.create_backup(data, backup_name)
-    
-    def restore_data(self, backup_name: str) -> bool:
-        """恢复数据"""
-        data = self.backup_manager.restore_backup(backup_name)
-        if data:
-            return self.import_data(data)
-        return False
-    
-    def run(self):
-        """运行主程序"""
-        print(self.get_full_report())
-        print("\n系统已准备就绪！")
-
-
+# 终极程序入口
 # ==========================================
-# 程序入口
-# ==========================================
-
 if __name__ == "__main__":
-    app = SmartPickerProV5()
-    app.run()
+    main()
